@@ -105,6 +105,30 @@ func newRunCommand() *runCommand {
 	return &rc
 }
 
+type versionCommand struct {
+	fs *flag.FlagSet
+}
+
+func (v *versionCommand) init(args []string) error {
+	return v.fs.Parse(args)
+}
+
+func (v *versionCommand) run() {
+	fmt.Println("Version 0.0.0")
+}
+
+func (v *versionCommand) getName() string {
+	return v.fs.Name()
+}
+
+func newVersionCommand() *versionCommand {
+	vc := versionCommand{
+		fs: flag.NewFlagSet("version", flag.ExitOnError),
+	}
+
+	return &vc
+}
+
 // addOperation
 /*
 checks for if an operation exists and adds it to the execution queue
@@ -149,6 +173,7 @@ func root(args []string) error {
 
 	cmds := []runner{
 		newRunCommand(),
+		newVersionCommand(),
 	}
 
 	subcommand := os.Args[1]
