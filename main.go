@@ -4,6 +4,9 @@ import (
 	"agent/browser"
 	"agent/command"
 	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 )
@@ -18,7 +21,84 @@ type Config struct {
 	Operations []Operation `json:"operations"`
 }
 
-var config Config
+type runner interface {
+	init([]string) error
+	run()
+	getName() string
+}
+
+type RunCommand struct {
+	fs                 *flag.FlagSet
+	headless           bool
+	configIsJsonString bool
+}
+
+func (r *RunCommand) init(args []string) error {
+	return r.fs.Parse(args)
+}
+
+func (r *RunCommand) getName() string {
+	return r.fs.Name()
+}
+
+func (r *RunCommand) run() {
+
+	if err := os.RemoveAll("./resources"); err != nil {
+		log.Fatal("cannot create resources directory due to: ", err)
+	}
+
+	configString := r.fs.Arg(0)
+
+	if configString == "" {
+		log.Fatal("invalid config argument")
+	}
+
+	var bytes []byte
+	var err error
+
+	if r.configIsJsonString {
+		bytes = []byte(configString)
+	} else {
+		bytes, err = os.ReadFile(configString)
+	}
+
+	if err != nil {
+		log.Fatalf("failed to read json file due to: %v", err)
+	}
+
+	var config Config
+
+	err = json.Unmarshal(bytes, &config)
+
+	if err != nil {
+		log.Fatalf("failed to decode json file: %v", err)
+	}
+
+	var browserBuilder browser.Executor
+	browserBuilder.Init(r.headless)
+
+	for _, opt := range config.Operations {
+		getBrowserSession(opt, &browserBuilder)
+	}
+
+	browserBuilder.Execute()
+}
+
+func newRunCommand() *RunCommand {
+	rc := RunCommand{
+		fs: flag.NewFlagSet("run", flag.ExitOnError),
+	}
+
+	rc.fs.BoolVar(&rc.headless, "h", false, "use headless mode")
+
+	rc.fs.BoolVar(
+		&rc.configIsJsonString,
+		"j",
+		false,
+		"whether or not the string being provided is a json string")
+
+	return &rc
+}
 
 func getBrowserSession(operation Operation, builder *browser.Executor) {
 
@@ -49,33 +129,34 @@ func getBrowserSession(operation Operation, builder *browser.Executor) {
 	browserParams.AppendTask(builder)
 }
 
-func init() {
-	if err := os.RemoveAll("./resources"); err != nil {
-		log.Fatal("cannot create resources directory due to: ", err)
+func root(args []string) error {
+	if len(args) < 1 {
+		return errors.New("no command passed")
 	}
 
-	jsonPath := os.Args[1]
-
-	bytes, err := os.ReadFile(jsonPath)
-
-	if err != nil {
-		log.Fatalf("failed to read json file due to: %v", err)
+	cmds := []runner{
+		newRunCommand(),
 	}
 
-	err = json.Unmarshal(bytes, &config)
+	subcommand := os.Args[1]
 
-	if err != nil {
-		log.Fatalf("failed to decode json file: %v", err)
+	for _, cmd := range cmds {
+		if cmd.getName() == subcommand {
+			if err := cmd.init(os.Args[2:]); err == nil {
+				cmd.run()
+				return nil
+			} else {
+				return err
+			}
+		}
 	}
+
+	return fmt.Errorf("unknown command: %s", subcommand)
 }
 
 func main() {
-	var browserBuilder browser.Executor
-	browserBuilder.Init(false)
-
-	for _, opt := range config.Operations {
-		getBrowserSession(opt, &browserBuilder)
+	if err := root(os.Args[1:]); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
-
-	browserBuilder.Execute()
 }
