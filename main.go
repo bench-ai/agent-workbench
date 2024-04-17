@@ -27,17 +27,17 @@ type runner interface {
 	getName() string
 }
 
-type RunCommand struct {
+type runCommand struct {
 	fs                 *flag.FlagSet
 	headless           bool
 	configIsJsonString bool
 }
 
-func (r *RunCommand) init(args []string) error {
+func (r *runCommand) init(args []string) error {
 	return r.fs.Parse(args)
 }
 
-func (r *RunCommand) getName() string {
+func (r *runCommand) getName() string {
 	return r.fs.Name()
 }
 
@@ -46,7 +46,7 @@ func (r *RunCommand) getName() string {
 The run command, checks if the user wishes to run their browser in headless mode, and whether they are pointing to
 a file or passing raw json
 */
-func (r *RunCommand) run() {
+func (r *runCommand) run() {
 
 	if err := os.RemoveAll("./resources"); err != nil {
 		log.Fatal("cannot create resources directory due to: ", err)
@@ -89,8 +89,8 @@ func (r *RunCommand) run() {
 	browserBuilder.Execute()
 }
 
-func newRunCommand() *RunCommand {
-	rc := RunCommand{
+func newRunCommand() *runCommand {
+	rc := runCommand{
 		fs: flag.NewFlagSet("run", flag.ExitOnError),
 	}
 
