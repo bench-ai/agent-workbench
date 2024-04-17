@@ -29,7 +29,7 @@ type Executor struct {
 	snapshotNameList []string
 	snapshotList     []*string
 	nodeSavePath     string
-	nodes            []*cdp.Node
+	nodes            *[]*cdp.Node
 }
 
 func DeleteByIndex[T any](s []T, index int) (error, []T) {
@@ -165,12 +165,15 @@ Collect all element nodes in the html webpage
 */
 func (b *Executor) CollectNodes(selector, savePath string, waitReady bool) {
 
+	var nodeSlice []*cdp.Node
+
 	if waitReady {
 		b.appendTask(chromedp.WaitReady(selector))
 	}
 
 	fmt.Println(selector)
-	b.appendTask(chromedp.Nodes(selector, &b.nodes))
+	b.appendTask(chromedp.Nodes(selector, &nodeSlice))
+	b.nodes = &nodeSlice
 	b.nodeSavePath = savePath
 }
 
@@ -202,20 +205,22 @@ func (b *Executor) Execute() {
 		}
 	}
 
-	metaDataSlice := parseThroughNodes(b.nodes)
-	byteSlice, err := json.Marshal(metaDataSlice)
+	if b.nodes != nil {
+		metaDataSlice := parseThroughNodes(*b.nodes)
+		byteSlice, err := json.Marshal(metaDataSlice)
 
-	if err != nil {
-		log.Fatalf("Unable to marshal node meta data: %v", err)
-	}
+		if err != nil {
+			log.Fatalf("Unable to marshal node meta data: %v", err)
+		}
 
-	if err := os.WriteFile(b.nodeSavePath, byteSlice, 066); err != nil {
-		log.Fatalf("Was unable to write file: %s, due to error: %v", b.nodeSavePath, err)
+		if err := os.WriteFile(b.nodeSavePath, byteSlice, 066); err != nil {
+			log.Fatalf("Was unable to write file: %s, due to error: %v", b.nodeSavePath, err)
+		}
 	}
 
 	b.imageList = []*[]byte{}
 	b.fileNameList = []string{}
 	b.snapshotList = []*string{}
 	b.snapshotNameList = []string{}
-	b.nodes = []*cdp.Node{}
+	b.nodes = nil
 }

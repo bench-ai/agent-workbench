@@ -88,5 +88,5 @@ func (c *CollectNodes) Validate() error {
 }
 
 func (c *CollectNodes) AppendTask(b *browser.Executor) {
-	b.CollectNodes(c.Selector, c.WaitReady)
+	b.CollectNodes(c.Selector, c.SaveName, c.WaitReady)
 }
