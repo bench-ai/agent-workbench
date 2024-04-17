@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 	"log"
@@ -14,22 +13,26 @@ import (
 )
 
 type nodeMetaData struct {
-	Id    int64  `json:"id"`
-	Type  string `json:"type"`
-	Xpath string `json:"xpath"`
+	Id         int64             `json:"id"`
+	Type       string            `json:"type"`
+	Xpath      string            `json:"xpath"`
+	Attributes map[string]string `json:"attributes"`
+}
+
+type imageMetaData struct {
+	snapShotName string
+	imageName    string
+	byteData     *[]byte
 }
 
 type Executor struct {
-	Url              string
-	ctx              context.Context
-	cancel           context.CancelFunc
-	tasks            chromedp.Tasks
-	imageList        []*[]byte
-	fileNameList     []string
-	snapshotNameList []string
-	snapshotList     []*string
-	nodeSavePath     string
-	nodes            *[]*cdp.Node
+	Url       string
+	ctx       context.Context
+	cancel    context.CancelFunc
+	tasks     chromedp.Tasks
+	imageList []*imageMetaData
+	htmlMap   map[string]*string
+	nodeMap   map[string]*[]*cdp.Node
 }
 
 func DeleteByIndex[T any](s []T, index int) (error, []T) {
@@ -79,6 +82,9 @@ func (b *Executor) Init(headless bool) *Executor {
 			chromedp.WithErrorf(log.Printf))
 	}
 
+	b.htmlMap = map[string]*string{}
+	b.nodeMap = map[string]*[]*cdp.Node{}
+
 	return b
 }
 
@@ -90,20 +96,29 @@ func (b *Executor) Navigate(url string) {
 	b.tasks = append(b.tasks, chromedp.Navigate(url))
 }
 
-func (b *Executor) FullPageScreenShot(quality uint8, name string) {
-
-	fmt.Println("here")
+func (b *Executor) FullPageScreenShot(quality uint8, name, snapshot string) {
 	var buf []byte
+	var imageData imageMetaData
 	b.appendTask(chromedp.FullScreenshot(&buf, int(quality)))
-	b.imageList = append(b.imageList, &buf)
-	b.fileNameList = append(b.fileNameList, name)
+
+	imageData.byteData = &buf
+	imageData.snapShotName = snapshot
+	imageData.imageName = name
+
+	b.imageList = append(b.imageList, &imageData)
 }
 
-func (b *Executor) ElementScreenshot(scale float64, selector string, name string) {
+func (b *Executor) ElementScreenshot(scale float64, selector string, name, snapshot string) {
 	var buf []byte
+	var imageData imageMetaData
+
 	b.appendTask(chromedp.ScreenshotScale(selector, scale, &buf, chromedp.BySearch, chromedp.NodeVisible))
-	b.imageList = append(b.imageList, &buf)
-	b.fileNameList = append(b.fileNameList, name)
+
+	imageData.byteData = &buf
+	imageData.snapShotName = snapshot
+	imageData.imageName = name
+
+	b.imageList = append(b.imageList, &imageData)
 }
 
 // SleepForSeconds
@@ -124,11 +139,10 @@ func (b *Executor) SaveSnapshot(snapshotName string) {
 	/*
 		TODO: Add instruction set to snapshot
 	*/
-	var snapShotHtml string
-	b.snapshotNameList = append(b.snapshotNameList, snapshotName)
-	b.snapshotList = append(b.snapshotList, &snapShotHtml)
 
+	var snapShotHtml string
 	b.appendTask(chromedp.OuterHTML("body", &snapShotHtml))
+	b.htmlMap[snapshotName] = &snapShotHtml
 }
 
 // parseThroughNodes
@@ -145,10 +159,17 @@ func parseThroughNodes(nodeSlice []*cdp.Node) []nodeMetaData {
 		for range nodeSlice {
 			nodeSlice = append(nodeSlice, nodeSlice[0].Children...)
 
+			attrMap := map[string]string{}
+
+			for i := 0; i < len(nodeSlice[0].Attributes); i += 2 {
+				attrMap[nodeSlice[0].Attributes[i]] += nodeSlice[0].Attributes[i+1]
+			}
+
 			metaData := nodeMetaData{
-				Id:    nodeSlice[0].NodeID.Int64(),
-				Type:  nodeSlice[0].NodeType.String(),
-				Xpath: nodeSlice[0].FullXPath(),
+				Id:         nodeSlice[0].NodeID.Int64(),
+				Type:       nodeSlice[0].NodeType.String(),
+				Xpath:      nodeSlice[0].FullXPath(),
+				Attributes: attrMap,
 			}
 
 			nodeMetaDataSlice = append(nodeMetaDataSlice, metaData)
@@ -159,22 +180,33 @@ func parseThroughNodes(nodeSlice []*cdp.Node) []nodeMetaData {
 	return nodeMetaDataSlice
 }
 
+// createSnapshotFolder
+/*
+Creates Snapshot folder if it does not exist already
+*/
+func createSnapshotFolder(snapshot string) string {
+	folderPath := filepath.Join("./resources", "snapshots", snapshot)
+	imagePath := filepath.Join(folderPath, "images")
+	if err := os.MkdirAll(imagePath, os.ModePerm); !os.IsExist(err) && err != nil {
+		log.Fatal("Could not create directory: " + folderPath)
+	}
+
+	return folderPath
+}
+
 // CollectNodes
 /*
 Collect all element nodes in the html webpage
 */
-func (b *Executor) CollectNodes(selector, savePath string, waitReady bool) {
-
+func (b *Executor) CollectNodes(selector, snapshotName string, waitReady bool) {
 	var nodeSlice []*cdp.Node
 
 	if waitReady {
 		b.appendTask(chromedp.WaitReady(selector))
 	}
 
-	fmt.Println(selector)
 	b.appendTask(chromedp.Nodes(selector, &nodeSlice))
-	b.nodes = &nodeSlice
-	b.nodeSavePath = savePath
+	b.nodeMap[snapshotName] = &nodeSlice
 }
 
 func (b *Executor) Execute() {
@@ -183,44 +215,46 @@ func (b *Executor) Execute() {
 		log.Fatalf("Unable to run browser tasks due to: %v", err)
 	}
 
-	for index, buf := range b.imageList {
-		path := filepath.Join("./resources", "images", b.fileNameList[index])
-		if err := os.WriteFile(path, *buf, 0666); err != nil {
+	for _, imd := range b.imageList {
+
+		folderPath := createSnapshotFolder(imd.snapShotName)
+		path := filepath.Join(folderPath, "images", imd.imageName)
+		if err := os.WriteFile(path, *imd.byteData, 0666); err != nil {
 			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
 		}
 	}
 
-	for index, snapshotName := range b.snapshotNameList {
+	for snapShotName, html := range b.htmlMap {
 
-		folderPath := filepath.Join("./resources", "snapshots", snapshotName)
-		if err := os.MkdirAll(folderPath, os.ModePerm); !os.IsExist(err) && err != nil {
-			log.Fatal("Could not create directory: " + folderPath)
-		}
+		folderPath := createSnapshotFolder(snapShotName)
 
 		path := filepath.Join(folderPath, "WPBody.txt")
 
-		byteSlice := []byte(*b.snapshotList[index])
+		byteSlice := []byte(*html)
 		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
 			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
 		}
 	}
 
-	if b.nodes != nil {
-		metaDataSlice := parseThroughNodes(*b.nodes)
-		byteSlice, err := json.Marshal(metaDataSlice)
+	for snapShotName, node := range b.nodeMap {
+		folderPath := createSnapshotFolder(snapShotName)
+
+		path := filepath.Join(folderPath, "NodeData.json")
+
+		metaDataSlice := parseThroughNodes(*node)
+
+		byteSlice, err := json.MarshalIndent(metaDataSlice, "", "    ")
 
 		if err != nil {
 			log.Fatalf("Unable to marshal node meta data: %v", err)
 		}
 
-		if err := os.WriteFile(b.nodeSavePath, byteSlice, 066); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", b.nodeSavePath, err)
+		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
+			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
 		}
 	}
 
-	b.imageList = []*[]byte{}
-	b.fileNameList = []string{}
-	b.snapshotList = []*string{}
-	b.snapshotNameList = []string{}
-	b.nodes = nil
+	b.imageList = []*imageMetaData{}
+	b.htmlMap = map[string]*string{}
+	b.nodeMap = map[string]*[]*cdp.Node{}
 }

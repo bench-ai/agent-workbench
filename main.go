@@ -54,11 +54,6 @@ func init() {
 		log.Fatal("cannot create resources directory due to: ", err)
 	}
 
-	err := os.MkdirAll("./resources/images", os.ModePerm)
-	if !os.IsExist(err) && err != nil {
-		log.Fatal("cannot create resources directory due to: ", err)
-	}
-
 	jsonPath := os.Args[1]
 
 	bytes, err := os.ReadFile(jsonPath)

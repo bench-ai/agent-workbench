@@ -16,8 +16,9 @@ type BrowserParams interface {
 }
 
 type FullPageScreenShot struct {
-	Quality uint8  `json:"quality"`
-	Name    string `json:"name"`
+	Quality        uint8  `json:"quality"`
+	Name           string `json:"name"`
+	SnapShotFolder string `json:"snap_shot_name"`
 }
 
 func (f *FullPageScreenShot) Validate() error {
@@ -33,7 +34,7 @@ func (f *FullPageScreenShot) Validate() error {
 }
 
 func (f *FullPageScreenShot) AppendTask(b *browser.Executor) {
-	b.FullPageScreenShot(f.Quality, f.Name)
+	b.FullPageScreenShot(f.Quality, f.Name, f.SnapShotFolder)
 }
 
 type OpenWebPage struct {
@@ -53,9 +54,10 @@ func (o *OpenWebPage) AppendTask(b *browser.Executor) {
 }
 
 type ElementScreenshot struct {
-	Scale    float64 `json:"scale"`
-	Name     string  `json:"name"`
-	Selector string  `json:"selector"`
+	Scale          float64 `json:"scale"`
+	Name           string  `json:"name"`
+	Selector       string  `json:"selector"`
+	SnapShotFolder string  `json:"snap_shot_name"`
 }
 
 func (e *ElementScreenshot) Validate() error {
@@ -71,22 +73,22 @@ func (e *ElementScreenshot) Validate() error {
 }
 
 func (e *ElementScreenshot) AppendTask(b *browser.Executor) {
-	b.ElementScreenshot(e.Scale, e.Selector, e.Name)
+	b.ElementScreenshot(e.Scale, e.Selector, e.Name, e.SnapShotFolder)
 }
 
 type CollectNodes struct {
-	Selector  string `json:"selector"`
-	WaitReady bool   `json:"wait_ready"`
-	SaveName  string `json:"save_name"`
+	Selector       string `json:"selector"`
+	WaitReady      bool   `json:"wait_ready"`
+	SnapShotFolder string `json:"snap_shot_name"`
 }
 
 func (c *CollectNodes) Validate() error {
-	if !strings.HasSuffix(c.SaveName, ".json") {
-		return errors.New("name must end with .json")
+	if strings.Contains(c.SnapShotFolder, ".") {
+		return errors.New("snap_shot_folder must be folder not a file")
 	}
 	return nil
 }
 
 func (c *CollectNodes) AppendTask(b *browser.Executor) {
-	b.CollectNodes(c.Selector, c.SaveName, c.WaitReady)
+	b.CollectNodes(c.Selector, c.SnapShotFolder, c.WaitReady)
 }
