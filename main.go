@@ -41,6 +41,11 @@ func (r *RunCommand) getName() string {
 	return r.fs.Name()
 }
 
+// run
+/**
+The run command, checks if the user wishes to run their browser in headless mode, and whether they are pointing to
+a file or passing raw json
+*/
 func (r *RunCommand) run() {
 
 	if err := os.RemoveAll("./resources"); err != nil {
@@ -78,7 +83,7 @@ func (r *RunCommand) run() {
 	browserBuilder.Init(r.headless)
 
 	for _, opt := range config.Operations {
-		getBrowserSession(opt, &browserBuilder)
+		addOperation(opt, &browserBuilder)
 	}
 
 	browserBuilder.Execute()
@@ -100,7 +105,11 @@ func newRunCommand() *RunCommand {
 	return &rc
 }
 
-func getBrowserSession(operation Operation, builder *browser.Executor) {
+// addOperation
+/*
+checks for if an operation exists and adds it to the execution queue
+*/
+func addOperation(operation Operation, builder *browser.Executor) {
 
 	paramBytes, _ := json.Marshal(operation.Params)
 	var browserParams command.BrowserParams
@@ -129,6 +138,10 @@ func getBrowserSession(operation Operation, builder *browser.Executor) {
 	browserParams.AppendTask(builder)
 }
 
+// root
+/*
+Checks for present subcommands and executes them
+*/
 func root(args []string) error {
 	if len(args) < 1 {
 		return errors.New("no command passed")
