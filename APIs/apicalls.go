@@ -12,6 +12,11 @@ type APIExecutor struct {
 	// necessary info
 }
 
+func (e *APIExecutor) Init(timeout *int16) *APIExecutor {
+
+	return nil
+}
+
 // AccessAPI connects to the OpenAI API using the provided API key and makes a request for text generation.
 func (e *APIExecutor) AccessAPI(apiKey string) error {
 	// Prepare request body

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"agent/APIs"
 	"agent/browser"
 	"agent/command"
 	"encoding/json"
@@ -27,10 +28,6 @@ type Operation struct {
 	CommandList []Command `json:"command_list"`
 }
 
-type Configuration struct {
-	Operations []Operation `json:"operations"`
-}
-
 func runBrowserCommands(settings Settings, commandList []Command) {
 	var browserBuilder browser.Executor
 	browserBuilder.Init(settings.Headless, settings.Timeout)
@@ -41,6 +38,52 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 
 	browserBuilder.Execute()
 }
+
+// the following 3 structs are LLM operation structs
+
+type LlmSettings struct {
+	Timeout *int16 `json:"timeout"`
+}
+
+type LlmCommand struct {
+	CommandName string                 `json:"command_name"`
+	Params      map[string]interface{} `json:"params"`
+}
+
+type LlmOperation struct {
+	Type        string       `json:"type"`
+	Settings    LlmSettings  `json:"settings"`
+	CommandList []LlmCommand `json:"command_list"`
+}
+
+func runLlmCommands(settings LlmSettings, commandList []LlmCommand) {
+	var apiBuilder APIs.APIExecutor
+	apiBuilder.Init(settings.Timeout) //need to update in apicalls.go
+
+	for _, com := range commandList {
+		addLlmOperation(com, &apiBuilder)
+	}
+
+	apiBuilder.Execute()
+}
+
+// Configuration struct creates a list called Operations that is of type interface, so it can be a list of either Operation or LlmOperation
+type Configuration struct {
+	Operations []interface{} `json:"operations"`
+}
+
+// OperationInterface isOperation LlmOperationInterface and isLlmOperation mark that Operation and LlmOperation implement an interface
+type OperationInterface interface {
+	isOperation()
+}
+
+func (o Operation) isOperation() {}
+
+type LlmOperationInterface interface {
+	isLlmOperation()
+}
+
+func (o LlmOperation) isLlmOperation() {}
 
 type runner interface {
 	init([]string) error
@@ -99,12 +142,24 @@ func (r *runCommand) run() {
 		log.Fatalf("failed to decode json file: %v", err)
 	}
 
-	for _, op := range config.Operations {
-		switch op.Type {
-		case "browser":
-			runBrowserCommands(op.Settings, op.CommandList)
+	for _, opInterface := range config.Operations {
+		switch op := opInterface.(type) {
+		case Operation:
+			switch op.Type {
+			case "browser":
+				runBrowserCommands(op.Settings, op.CommandList)
+			default:
+				log.Fatalf("unknown operation type: %s", op.Type)
+			}
+		case LlmOperation:
+			switch op.Type {
+			case "llm":
+				runLlmCommands(op.Settings, op.CommandList)
+			default:
+				log.Fatalf("unknown operation type: %s", op.Type)
+			}
 		default:
-			log.Fatalf("unknown operation type: %s", op.Type)
+			log.Fatalf("unknown operation type")
 		}
 	}
 }
@@ -184,6 +239,41 @@ func addOperation(com Command, builder *browser.Executor) {
 	}
 
 	browserParams.AppendTask(builder)
+}
+
+func addLlmOperation(com LlmCommand, builder *APIs.APIExecutor) {
+
+	/*paramBytes, _ := json.Marshal(com.Params)
+	var browserParams command.BrowserParams
+
+	switch com.CommandName {
+	case "open_web_page":
+		browserParams = &command.OpenWebPage{}
+	case "full_page_screenshot":
+		browserParams = &command.FullPageScreenShot{}
+	case "element_screenshot":
+		browserParams = &command.ElementScreenshot{}
+	case "collect_nodes":
+		browserParams = &command.CollectNodes{}
+	case "click":
+		browserParams = &command.Click{}
+	case "save_html":
+		browserParams = &command.SaveHtml{}
+	case "sleep":
+		browserParams = &command.Sleep{}
+	default:
+		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
+	}
+
+	if err := json.Unmarshal(paramBytes, browserParams); err != nil {
+		log.Fatalf("failed to parse %s command \n", com.CommandName)
+	}
+
+	if err := browserParams.Validate(); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	browserParams.AppendTask(builder)*/
 }
 
 // root
