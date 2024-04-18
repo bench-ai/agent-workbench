@@ -13,8 +13,9 @@ import (
 )
 
 type Settings struct {
-	Timeout  *int16 `json:"timeout"`
-	Headless bool   `json:"headless"`
+	Timeout   *int16 `json:"timeout"`
+	Headless  bool   `json:"headless"`
+	Max_Token *int16 `json:"max_token"`
 }
 
 type Command struct {
@@ -39,8 +40,19 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 	browserBuilder.Execute()
 }
 
-// the following 3 structs are LLM operation structs
+func runLlmCommands(settings Settings, commandList []Command) {
+	var apiBuilder APIs.APIExecutor
+	apiBuilder.Init(settings.Max_Token, settings.Timeout) //need to update in apicalls.go
 
+	for _, com := range commandList {
+		addLlmOperation(com, &apiBuilder)
+	}
+
+	apiBuilder.Execute()
+}
+
+// the following comments are in case Configuration does actually need to be implemented as an interface
+/*
 type LlmSettings struct {
 	Timeout *int16 `json:"timeout"`
 }
@@ -51,9 +63,9 @@ type LlmCommand struct {
 }
 
 type LlmOperation struct {
-	Type        string       `json:"type"`
-	Settings    LlmSettings  `json:"settings"`
-	CommandList []LlmCommand `json:"command_list"`
+	Type        string    `json:"type"`
+	Settings    Settings  `json:"settings"`
+	CommandList []Command `json:"command_list"`
 }
 
 func runLlmCommands(settings LlmSettings, commandList []LlmCommand) {
@@ -66,24 +78,28 @@ func runLlmCommands(settings LlmSettings, commandList []LlmCommand) {
 
 	apiBuilder.Execute()
 }
+*/
 
-// Configuration struct creates a list called Operations that is of type interface, so it can be a list of either Operation or LlmOperation
-type Configuration struct {
-	Operations []interface{} `json:"operations"`
-}
-
+/*
 // OperationInterface isOperation LlmOperationInterface and isLlmOperation mark that Operation and LlmOperation implement an interface
-type OperationInterface interface {
-	isOperation()
-}
+
+	type OperationInterface interface {
+		isOperation()
+	}
 
 func (o Operation) isOperation() {}
 
-type LlmOperationInterface interface {
-	isLlmOperation()
-}
+	type LlmOperationInterface interface {
+		isLlmOperation()
+	}
 
 func (o LlmOperation) isLlmOperation() {}
+*/
+// Configuration struct creates a list called Operations that is of type interface, so it can be a list of either Operation or LlmOperation
+
+type Configuration struct {
+	Operations []Operation `json:"operations"`
+}
 
 type runner interface {
 	init([]string) error
@@ -142,24 +158,14 @@ func (r *runCommand) run() {
 		log.Fatalf("failed to decode json file: %v", err)
 	}
 
-	for _, opInterface := range config.Operations {
-		switch op := opInterface.(type) {
-		case Operation:
-			switch op.Type {
-			case "browser":
-				runBrowserCommands(op.Settings, op.CommandList)
-			default:
-				log.Fatalf("unknown operation type: %s", op.Type)
-			}
-		case LlmOperation:
-			switch op.Type {
-			case "llm":
-				runLlmCommands(op.Settings, op.CommandList)
-			default:
-				log.Fatalf("unknown operation type: %s", op.Type)
-			}
+	for _, op := range config.Operations {
+		switch op.Type {
+		case "browser":
+			runBrowserCommands(op.Settings, op.CommandList)
+		case "llm":
+			runLlmCommands(op.Settings, op.CommandList)
 		default:
-			log.Fatalf("unknown operation type")
+			log.Fatalf("unknown operation type: %s", op.Type)
 		}
 	}
 }
@@ -241,39 +247,40 @@ func addOperation(com Command, builder *browser.Executor) {
 	browserParams.AppendTask(builder)
 }
 
-func addLlmOperation(com LlmCommand, builder *APIs.APIExecutor) {
+func addLlmOperation(com Command, builder *APIs.APIExecutor) {
 
-	/*paramBytes, _ := json.Marshal(com.Params)
-	var browserParams command.BrowserParams
+	paramBytes, _ := json.Marshal(com.Params)
+	var apiParams APIs.ApiParams
 
 	switch com.CommandName {
-	case "open_web_page":
-		browserParams = &command.OpenWebPage{}
-	case "full_page_screenshot":
-		browserParams = &command.FullPageScreenShot{}
-	case "element_screenshot":
-		browserParams = &command.ElementScreenshot{}
-	case "collect_nodes":
-		browserParams = &command.CollectNodes{}
-	case "click":
-		browserParams = &command.Click{}
-	case "save_html":
-		browserParams = &command.SaveHtml{}
+	case "accessLLM":
+		//apiParams = &command.OpenWebPage{}
+		print("here ")
+	case "gptForTextAlternatives":
+		print("here ")
+	case "gptForTextAlternative":
+		print("here ")
+	case "gptForCodeParsing":
+		print("here ")
+	case "gptForImage":
+		print("here ")
+	case "gptForWebpageAnalysis":
+		print("here ")
 	case "sleep":
-		browserParams = &command.Sleep{}
+		print("here ")
 	default:
 		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
 	}
 
-	if err := json.Unmarshal(paramBytes, browserParams); err != nil {
+	if err := json.Unmarshal(paramBytes, apiParams); err != nil {
 		log.Fatalf("failed to parse %s command \n", com.CommandName)
 	}
 
-	if err := browserParams.Validate(); err != nil {
+	if err := apiParams.Validate(); err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	browserParams.AppendTask(builder)*/
+	apiParams.AppendTask(builder)
 }
 
 // root
