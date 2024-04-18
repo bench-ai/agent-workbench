@@ -133,7 +133,7 @@ func (b *Executor) Click(selector string, queryFunc func(s *chromedp.Selector)) 
 /*
 Lets the browser pause operations for a certain amount of time
 */
-func (b *Executor) SleepForSeconds(seconds int) {
+func (b *Executor) SleepForSeconds(seconds uint16) {
 	b.appendTask(
 		chromedp.Sleep(time.Duration(seconds) * time.Second))
 }
@@ -144,10 +144,6 @@ Collects all the HTML associated with a webpage, saves all operations that led t
 we use it for snapshot purposes
 */
 func (b *Executor) SaveSnapshot(snapshotName string) {
-	/*
-		TODO: Add instruction set to snapshot
-	*/
-
 	var snapShotHtml string
 	b.appendTask(chromedp.OuterHTML("body", &snapShotHtml))
 	b.htmlMap[snapshotName] = &snapShotHtml
@@ -236,7 +232,7 @@ func (b *Executor) Execute() {
 
 		folderPath := createSnapshotFolder(snapShotName)
 
-		path := filepath.Join(folderPath, "WPBody.txt")
+		path := filepath.Join(folderPath, "body.txt")
 
 		byteSlice := []byte(*html)
 		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
@@ -247,7 +243,7 @@ func (b *Executor) Execute() {
 	for snapShotName, node := range b.nodeMap {
 		folderPath := createSnapshotFolder(snapShotName)
 
-		path := filepath.Join(folderPath, "NodeData.json")
+		path := filepath.Join(folderPath, "nodeData.json")
 
 		metaDataSlice := parseThroughNodes(*node)
 

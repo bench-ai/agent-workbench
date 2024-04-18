@@ -167,6 +167,10 @@ func addOperation(com Command, builder *browser.Executor) {
 		browserParams = &command.CollectNodes{}
 	case "click":
 		browserParams = &command.Click{}
+	case "save_html":
+		browserParams = &command.SaveHtml{}
+	case "sleep":
+		browserParams = &command.Sleep{}
 	default:
 		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
 	}

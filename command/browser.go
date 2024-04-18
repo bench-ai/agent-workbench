@@ -132,3 +132,30 @@ func (c *Click) AppendTask(b *browser.Executor) {
 
 	b.Click(c.Selector, query)
 }
+
+type SaveHtml struct {
+	SnapShotFolder string `json:"snap_shot_name"`
+}
+
+func (s *SaveHtml) Validate() error {
+	if strings.Contains(s.SnapShotFolder, ".") {
+		return errors.New("snap_shot_folder must be folder not a file")
+	}
+	return nil
+}
+
+func (s *SaveHtml) AppendTask(b *browser.Executor) {
+	b.SaveSnapshot(s.SnapShotFolder)
+}
+
+type Sleep struct {
+	Seconds uint16 `json:"seconds"`
+}
+
+func (s *Sleep) Validate() error {
+	return nil
+}
+
+func (s *Sleep) AppendTask(b *browser.Executor) {
+	b.SleepForSeconds(s.Seconds)
+}
