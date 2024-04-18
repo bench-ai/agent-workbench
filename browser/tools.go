@@ -59,12 +59,8 @@ func DeleteByIndex[T any](s []T, index int) (error, []T) {
 	return nil, append(slice1, slice2...)
 }
 
-func (b *Executor) Init(headless bool) *Executor {
+func (b *Executor) Init(headless bool, timeout *int16) *Executor {
 
-	/**
-		ctx, cancel = context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	*/
 	if headless {
 		b.ctx, b.cancel = chromedp.NewContext(
 			context.Background(),
@@ -80,6 +76,10 @@ func (b *Executor) Init(headless bool) *Executor {
 			actx,
 			chromedp.WithLogf(log.Printf),
 			chromedp.WithErrorf(log.Printf))
+	}
+
+	if timeout != nil {
+		b.ctx, b.cancel = context.WithTimeout(b.ctx, time.Duration(*timeout)*time.Second)
 	}
 
 	b.htmlMap = map[string]*string{}
@@ -119,6 +119,14 @@ func (b *Executor) ElementScreenshot(scale float64, selector string, name, snaps
 	imageData.imageName = name
 
 	b.imageList = append(b.imageList, &imageData)
+}
+
+// Click
+/*
+Instructs the browser agent to click on a section of the webpage
+*/
+func (b *Executor) Click(selector string, queryFunc func(s *chromedp.Selector)) {
+	b.appendTask(chromedp.Click(selector, queryFunc))
 }
 
 // SleepForSeconds

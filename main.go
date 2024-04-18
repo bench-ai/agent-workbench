@@ -11,14 +11,35 @@ import (
 	"os"
 )
 
-type Operation struct {
-	Type        string                 `json:"type"`
+type Settings struct {
+	Timeout  *int16 `json:"timeout"`
+	Headless bool   `json:"headless"`
+}
+
+type Command struct {
 	CommandName string                 `json:"command_name"`
 	Params      map[string]interface{} `json:"params"`
 }
 
-type Config struct {
+type Operation struct {
+	Type        string    `json:"type"`
+	Settings    Settings  `json:"settings"`
+	CommandList []Command `json:"command_list"`
+}
+
+type Configuration struct {
 	Operations []Operation `json:"operations"`
+}
+
+func runBrowserCommands(settings Settings, commandList []Command) {
+	var browserBuilder browser.Executor
+	browserBuilder.Init(settings.Headless, settings.Timeout)
+
+	for _, com := range commandList {
+		addOperation(com, &browserBuilder)
+	}
+
+	browserBuilder.Execute()
 }
 
 type runner interface {
@@ -29,7 +50,6 @@ type runner interface {
 
 type runCommand struct {
 	fs                 *flag.FlagSet
-	headless           bool
 	configIsJsonString bool
 }
 
@@ -71,7 +91,7 @@ func (r *runCommand) run() {
 		log.Fatalf("failed to read json file due to: %v", err)
 	}
 
-	var config Config
+	var config Configuration
 
 	err = json.Unmarshal(bytes, &config)
 
@@ -79,22 +99,20 @@ func (r *runCommand) run() {
 		log.Fatalf("failed to decode json file: %v", err)
 	}
 
-	var browserBuilder browser.Executor
-	browserBuilder.Init(r.headless)
-
-	for _, opt := range config.Operations {
-		addOperation(opt, &browserBuilder)
+	for _, op := range config.Operations {
+		switch op.Type {
+		case "browser":
+			runBrowserCommands(op.Settings, op.CommandList)
+		default:
+			log.Fatalf("unknown operation type: %s", op.Type)
+		}
 	}
-
-	browserBuilder.Execute()
 }
 
 func newRunCommand() *runCommand {
 	rc := runCommand{
 		fs: flag.NewFlagSet("run", flag.ExitOnError),
 	}
-
-	rc.fs.BoolVar(&rc.headless, "h", false, "use headless mode")
 
 	rc.fs.BoolVar(
 		&rc.configIsJsonString,
@@ -133,12 +151,12 @@ func newVersionCommand() *versionCommand {
 /*
 checks for if an operation exists and adds it to the execution queue
 */
-func addOperation(operation Operation, builder *browser.Executor) {
+func addOperation(com Command, builder *browser.Executor) {
 
-	paramBytes, _ := json.Marshal(operation.Params)
+	paramBytes, _ := json.Marshal(com.Params)
 	var browserParams command.BrowserParams
 
-	switch operation.CommandName {
+	switch com.CommandName {
 	case "open_web_page":
 		browserParams = &command.OpenWebPage{}
 	case "full_page_screenshot":
@@ -147,12 +165,14 @@ func addOperation(operation Operation, builder *browser.Executor) {
 		browserParams = &command.ElementScreenshot{}
 	case "collect_nodes":
 		browserParams = &command.CollectNodes{}
+	case "click":
+		browserParams = &command.Click{}
 	default:
-		log.Fatalf("%s is not a supported browser command \n", operation.CommandName)
+		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
 	}
 
 	if err := json.Unmarshal(paramBytes, browserParams); err != nil {
-		log.Fatalf("failed to parse %s command \n", operation.CommandName)
+		log.Fatalf("failed to parse %s command \n", com.CommandName)
 	}
 
 	if err := browserParams.Validate(); err != nil {
