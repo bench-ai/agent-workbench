@@ -16,7 +16,7 @@ add_path_to_file_mac() {
 }
 
 #mac installation procedure
-install_mac () {
+install_unix () {
 
 # Define the new path you want to add
 new_path="/usr/local/agent/bin"
@@ -39,7 +39,7 @@ fi
 
 # build agent
 echo "building agent...."
-go build `pwd`
+go build .
 if [ $? -eq 0 ]; then
     echo " Build Successful" 
 else
@@ -75,6 +75,13 @@ case $current_shell in
             add_path_to_file_mac "$HOME/.bash_profile"
         fi
         ;;
+    *"/bash")
+        if [ -f "~/.profile" ]; then
+            # If .bashrc exists, use it
+            echo " adding to profile .profile"
+            add_path_to_file_mac "~/.profile"
+        fi
+        ;;
     *"/zsh")
         # Use .zshrc for Zsh
         if [ ! -f "$HOME/.zshrc" ]; then
@@ -94,16 +101,7 @@ esac
 # Detect the operating system using `uname` and other methods
 OS="$(uname -s)"
 case "$OS" in
-    Linux*)     
-        # Linux OS, check specific distributions
-        rm -rf "/usr/local/agent"
-        mkdir -p "/usr/local/agent/bin"
-
-        export PATH="$PATH:/usr/local/go/bin"
-
-        go build .
-        mv agent "/usr/local/agent/bin"
-
+    Linux*)
         if [ -f /etc/os-release ]; then
             . /etc/os-release
             OS=$NAME
@@ -115,11 +113,15 @@ case "$OS" in
         else
             echo "This is a generic Linux system (distro not identified)."
         fi
+
+        export PATH="$PATH:/usr/local/go/bin"
+
+        install_unix
         ;;
     Darwin*)
         echo "This is macOS. Installing in Mac"
         # call install for mac
-        install_mac
+        install_unix
         ;;
     CYGWIN*|MINGW32*|MSYS*|MINGW*)
         echo "This is Windows."
