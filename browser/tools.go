@@ -59,12 +59,8 @@ func DeleteByIndex[T any](s []T, index int) (error, []T) {
 	return nil, append(slice1, slice2...)
 }
 
-func (b *Executor) Init(headless bool) *Executor {
+func (b *Executor) Init(headless bool, timeout *int16) *Executor {
 
-	/**
-		ctx, cancel = context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	*/
 	if headless {
 		b.ctx, b.cancel = chromedp.NewContext(
 			context.Background(),
@@ -80,6 +76,10 @@ func (b *Executor) Init(headless bool) *Executor {
 			actx,
 			chromedp.WithLogf(log.Printf),
 			chromedp.WithErrorf(log.Printf))
+	}
+
+	if timeout != nil {
+		b.ctx, b.cancel = context.WithTimeout(b.ctx, time.Duration(*timeout)*time.Second)
 	}
 
 	b.htmlMap = map[string]*string{}
@@ -121,11 +121,19 @@ func (b *Executor) ElementScreenshot(scale float64, selector string, name, snaps
 	b.imageList = append(b.imageList, &imageData)
 }
 
+// Click
+/*
+Instructs the browser agent to click on a section of the webpage
+*/
+func (b *Executor) Click(selector string, queryFunc func(s *chromedp.Selector)) {
+	b.appendTask(chromedp.Click(selector, queryFunc))
+}
+
 // SleepForSeconds
 /*
 Lets the browser pause operations for a certain amount of time
 */
-func (b *Executor) SleepForSeconds(seconds int) {
+func (b *Executor) SleepForSeconds(seconds uint16) {
 	b.appendTask(
 		chromedp.Sleep(time.Duration(seconds) * time.Second))
 }
@@ -136,10 +144,6 @@ Collects all the HTML associated with a webpage, saves all operations that led t
 we use it for snapshot purposes
 */
 func (b *Executor) SaveSnapshot(snapshotName string) {
-	/*
-		TODO: Add instruction set to snapshot
-	*/
-
 	var snapShotHtml string
 	b.appendTask(chromedp.OuterHTML("body", &snapShotHtml))
 	b.htmlMap[snapshotName] = &snapShotHtml
@@ -228,7 +232,7 @@ func (b *Executor) Execute() {
 
 		folderPath := createSnapshotFolder(snapShotName)
 
-		path := filepath.Join(folderPath, "WPBody.txt")
+		path := filepath.Join(folderPath, "body.txt")
 
 		byteSlice := []byte(*html)
 		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
@@ -239,7 +243,7 @@ func (b *Executor) Execute() {
 	for snapShotName, node := range b.nodeMap {
 		folderPath := createSnapshotFolder(snapShotName)
 
-		path := filepath.Join(folderPath, "NodeData.json")
+		path := filepath.Join(folderPath, "nodeData.json")
 
 		metaDataSlice := parseThroughNodes(*node)
 
