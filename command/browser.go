@@ -3,6 +3,9 @@ package command
 import (
 	"agent/browser"
 	"errors"
+	"fmt"
+	"github.com/chromedp/chromedp"
+	"log"
 	"strings"
 )
 
@@ -91,4 +94,68 @@ func (c *CollectNodes) Validate() error {
 
 func (c *CollectNodes) AppendTask(b *browser.Executor) {
 	b.CollectNodes(c.Selector, c.SnapShotFolder, c.WaitReady)
+}
+
+type Click struct {
+	Selector  string `json:"selector"`
+	QueryType string `json:"query_type"`
+}
+
+func (c *Click) Validate() error {
+
+	if c.Selector == "" {
+		return errors.New("selector is required")
+	}
+
+	validTypes := [1]string{
+		"search",
+	}
+
+	for _, i := range validTypes {
+		if c.QueryType == i {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("query type %s not supported", c.QueryType)
+}
+
+func (c *Click) AppendTask(b *browser.Executor) {
+	var query func(s *chromedp.Selector)
+
+	switch c.QueryType {
+	case "search":
+		query = chromedp.BySearch
+	default:
+		log.Fatalf("unspported querytype %s", c.QueryType)
+	}
+
+	b.Click(c.Selector, query)
+}
+
+type SaveHtml struct {
+	SnapShotFolder string `json:"snap_shot_name"`
+}
+
+func (s *SaveHtml) Validate() error {
+	if strings.Contains(s.SnapShotFolder, ".") {
+		return errors.New("snap_shot_folder must be folder not a file")
+	}
+	return nil
+}
+
+func (s *SaveHtml) AppendTask(b *browser.Executor) {
+	b.SaveSnapshot(s.SnapShotFolder)
+}
+
+type Sleep struct {
+	Seconds uint16 `json:"seconds"`
+}
+
+func (s *Sleep) Validate() error {
+	return nil
+}
+
+func (s *Sleep) AppendTask(b *browser.Executor) {
+	b.SleepForSeconds(s.Seconds)
 }
