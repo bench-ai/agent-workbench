@@ -51,52 +51,6 @@ func runLlmCommands(settings Settings, commandList []Command) {
 	apiBuilder.Execute()
 }
 
-// the following comments are in case Configuration does actually need to be implemented as an interface
-/*
-type LlmSettings struct {
-	Timeout *int16 `json:"timeout"`
-}
-
-type LlmCommand struct {
-	CommandName string                 `json:"command_name"`
-	Params      map[string]interface{} `json:"params"`
-}
-
-type LlmOperation struct {
-	Type        string    `json:"type"`
-	Settings    Settings  `json:"settings"`
-	CommandList []Command `json:"command_list"`
-}
-
-func runLlmCommands(settings LlmSettings, commandList []LlmCommand) {
-	var apiBuilder APIs.APIExecutor
-	apiBuilder.Init(settings.Timeout) //need to update in apicalls.go
-
-	for _, com := range commandList {
-		addLlmOperation(com, &apiBuilder)
-	}
-
-	apiBuilder.Execute()
-}
-*/
-
-/*
-// OperationInterface isOperation LlmOperationInterface and isLlmOperation mark that Operation and LlmOperation implement an interface
-
-	type OperationInterface interface {
-		isOperation()
-	}
-
-func (o Operation) isOperation() {}
-
-	type LlmOperationInterface interface {
-		isLlmOperation()
-	}
-
-func (o LlmOperation) isLlmOperation() {}
-*/
-// Configuration struct creates a list called Operations that is of type interface, so it can be a list of either Operation or LlmOperation
-
 type Configuration struct {
 	Operations []Operation `json:"operations"`
 }
@@ -254,20 +208,20 @@ func addLlmOperation(com Command, builder *APIs.APIExecutor) {
 
 	switch com.CommandName {
 	case "accessLLM":
-		//apiParams = &command.OpenWebPage{}
-		print("here ")
+		fmt.Print("here 1")
+		apiParams = &APIs.ApiAccess{}
 	case "gptForTextAlternatives":
-		print("here ")
-	case "gptForTextAlternative":
-		print("here ")
+		fmt.Print("here 2")
+		apiParams = &APIs.TextToFix{}
 	case "gptForCodeParsing":
-		print("here ")
+		fmt.Print("here 3")
+		apiParams = &APIs.CodeToCheck{}
 	case "gptForImage":
-		print("here ")
+		fmt.Print("here 4")
+		apiParams = &APIs.ImageToCheck{}
 	case "gptForWebpageAnalysis":
-		print("here ")
-	case "sleep":
-		print("here ")
+		fmt.Print("here 5")
+		apiParams = &APIs.WebpageToCheck{}
 	default:
 		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	//"log"
 	"net/http"
 	"time"
@@ -17,7 +18,8 @@ type APIExecutor struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	llmName string
-	task    []interface{} //tasks will be of different types so it is stored as a list of interfaces
+	tasks   []interface{} //list of function calls. Currently implemented as a list if interfaces.
+	// Once the implementation of all tasks is complete, it will be implemented as a list of functions
 
 }
 
@@ -28,45 +30,78 @@ func (a *APIExecutor) Init(max_token *int16, timeout *int16) *APIExecutor {
 	return a
 }
 
+//functions to execute commands
+
+type apiKeyTransport struct {
+	apiKey string
+}
+
+func (t *apiKeyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	return http.DefaultTransport.RoundTrip(req)
+}
+
 // AccessAPI connects to the OpenAI API using the provided API key and makes a request for text generation.
-func (a *APIExecutor) AccessAPI(apiKey string) error {
-	// Prepare request body
-	//Example code assuming text generation request
-	requestBody := map[string]interface{}{
-		"prompt":     "some prompt",
-		"max_tokens": 500,
-	}
-
-	requestJSON, err := json.Marshal(requestBody)
-	if err != nil {
-		return err
-	}
-
+func (a *APIExecutor) AccessAPI(apiKey string) *http.Client {
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Transport: &apiKeyTransport{apiKey: apiKey},
 	}
+	return client
+}
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/engines/davinci/completions", bytes.NewBuffer(requestJSON))
+type SessionResponse struct {
+	ID string `json:"id"`
+}
+
+// StartSession is a function that starts a session with the client and takes in the desired engine as a parameter.
+// This function should be called by the function that use gpt
+func StartSession(client *http.Client, engine string) (string, error) {
+	ctx := context.Background()
+	url := "https://api.openai.com/v1/sessions"
+
+	// Create request body
+	requestBody := map[string]string{"engine": engine}
+	requestBodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	// Send POST request
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(requestBodyBytes))
+	if err != nil {
+		return "", err
+	}
 	req.Header.Set("Content-Type", "application/json")
-
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("API call failed with status: " + resp.Status)
+	// Parse response
+	var sessionResp SessionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sessionResp); err != nil {
+		return "", err
 	}
 
-	// Handle API response
+	return sessionResp.ID, nil
+}
 
-	return nil
+func (a *APIExecutor) gptForTextAlternatives(s string) (string, error) {
+	fmt.Print(s)
+	return s, nil
+}
+func (a *APIExecutor) gptForCodeParsing(s string) (string, error) {
+	fmt.Print(s)
+	return s, nil
+}
+func (a *APIExecutor) gptForImage(s string) (string, error) {
+	fmt.Print(s)
+	return s, nil
+}
+func (a *APIExecutor) gptForWebpageAnalysis(s string) (string, error) {
+	fmt.Print(s)
+	return s, nil
 }
 
 func (a *APIExecutor) Execute() {
@@ -74,18 +109,17 @@ func (a *APIExecutor) Execute() {
 }
 
 func (a *APIExecutor) appendTask(action string) {
-	a.task = append(a.task, action)
+	a.tasks = append(a.tasks, action)
 }
 
 ///////////////////equivalent to browser.go///////////////////
 
 /* commands to implement are
-accessLLM
-gptForTextAlternative
+AccessLLM
+gptForTextAlternatives
 gptForCodeParsing
 gptForImage
-gptForWebpageAnalysis
-sleep*/
+gptForWebpageAnalysis*/
 
 type Parameters interface {
 	Validate() error
@@ -98,27 +132,101 @@ type ApiParams interface {
 
 //accessLLM
 
-type OpenAiApiAccess struct {
+type ApiAccess struct {
 	ApiKey string `json:"api_key"`
 }
 
-func (o *OpenAiApiAccess) Validate() error {
+func (o *ApiAccess) Validate() error {
 	if o.ApiKey == "" {
 		return errors.New("api_key must be set")
 	}
 	return nil
 }
 
-func (o *OpenAiApiAccess) AppendTask(a *APIExecutor) {
-	err := a.AccessAPI(o.ApiKey)
-	if err != nil {
-		return
-	}
+func (o *ApiAccess) AppendTask(a *APIExecutor) {
+	a.AccessAPI(o.ApiKey)
 }
 
-//gptForTextAlternatives
-//gptForTextAlternative
+// gptForTextAlternatives
+
+type TextToFix struct {
+	Text   string `json:"text"`
+	Prompt string `json:"prompt"`
+}
+
+func (o *TextToFix) Validate() error {
+	if o.Text == "" {
+		return errors.New("text must be set")
+	}
+	if o.Prompt == "" {
+		return errors.New("prompt must be set")
+	}
+	return nil
+}
+
+func (o *TextToFix) AppendTask(a *APIExecutor) {
+	a.gptForTextAlternatives(o.Text)
+}
+
 //gptForCodeParsing
+
+type CodeToCheck struct {
+	Code   string `json:"code"`
+	Prompt string `json:"prompt"`
+}
+
+func (o *CodeToCheck) Validate() error {
+	if o.Code == "" {
+		return errors.New("code must be set")
+	}
+	if o.Prompt == "" {
+		return errors.New("prompt must be set")
+	}
+	return nil
+}
+
+func (o *CodeToCheck) AppendTask(a *APIExecutor) {
+	a.gptForCodeParsing(o.Code)
+}
+
 //gptForImage
+
+type ImageToCheck struct {
+	Image  string `json:"image"`
+	Prompt string `json:"prompt"`
+}
+
+func (o *ImageToCheck) Validate() error {
+	if o.Image == "" {
+		return errors.New("image must be set")
+	}
+	if o.Prompt == "" {
+		return errors.New("prompt must be set")
+	}
+	return nil
+}
+
+func (o *ImageToCheck) AppendTask(a *APIExecutor) {
+	a.gptForImage(o.Image)
+}
+
 //gptForWebpageAnalysis
-//sleep
+
+type WebpageToCheck struct {
+	Webpage string `json:"webpage"`
+	Prompt  string `json:"prompt"`
+}
+
+func (o *WebpageToCheck) Validate() error {
+	if o.Webpage == "" {
+		return errors.New("webpage must be set")
+	}
+	if o.Prompt == "" {
+		return errors.New("prompt must be set")
+	}
+	return nil
+}
+
+func (o *WebpageToCheck) AppendTask(a *APIExecutor) {
+	a.gptForWebpageAnalysis(o.Webpage)
+}
