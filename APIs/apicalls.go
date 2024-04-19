@@ -1,13 +1,10 @@
 package APIs
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	//"log"
-	"net/http"
+	"agent/apifunctions"
 	"time"
 )
 
@@ -18,20 +15,45 @@ type APIExecutor struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	llmName string
-	tasks   []interface{} //list of function calls. Currently implemented as a list if interfaces.
+	//the following lines are currently commented out in case the new implementation with apifunctions.go works
+	//tasks   []interface{} //list of function calls. Currently implemented as a list if interfaces.
 	// Once the implementation of all tasks is complete, it will be implemented as a list of functions
-
+	Tasks apifunctions.Tasks
 }
 
 func (a *APIExecutor) Init(max_token *int16, timeout *int16) *APIExecutor {
+	a.ctx = context.Background()
 	if timeout != nil {
 		a.ctx, a.cancel = context.WithTimeout(a.ctx, time.Duration(*timeout)*time.Second)
 	}
 	return a
 }
 
-//functions to execute commands
+func (a *APIExecutor) appendTask(action apifunctions.Action) {
+	a.Tasks = append(a.Tasks, action)
+}
 
+func (a *APIExecutor) AccessAPI(apiKey string) {
+	a.Tasks = append(a.Tasks, apifunctions.FunctionAction(apifunctions.AccessAPI(apiKey)))
+}
+func (a *APIExecutor) gptForTextAlternatives(s string) {
+	a.Tasks = append(a.Tasks, apifunctions.FunctionAction(apifunctions.GptForTextAlternatives(s)))
+}
+
+func (a *APIExecutor) gptForCodeParsing(s string) {
+	a.Tasks = append(a.Tasks, apifunctions.FunctionAction(apifunctions.GptForCodeParsing(s)))
+}
+
+func (a *APIExecutor) gptForImage(s string) {
+	a.Tasks = append(a.Tasks, apifunctions.FunctionAction(apifunctions.GptForImage(s)))
+}
+
+func (a *APIExecutor) gptForWebpageAnalysis(s string) {
+	a.Tasks = append(a.Tasks, apifunctions.FunctionAction(apifunctions.GptForWebpageAnalysis(s)))
+}
+
+//AccessAPI logic
+/*
 type apiKeyTransport struct {
 	apiKey string
 }
@@ -86,30 +108,34 @@ func StartSession(client *http.Client, engine string) (string, error) {
 
 	return sessionResp.ID, nil
 }
+*/
+//functions to execute commands
 
-func (a *APIExecutor) gptForTextAlternatives(s string) (string, error) {
-	fmt.Print(s)
-	return s, nil
-}
-func (a *APIExecutor) gptForCodeParsing(s string) (string, error) {
-	fmt.Print(s)
-	return s, nil
-}
-func (a *APIExecutor) gptForImage(s string) (string, error) {
-	fmt.Print(s)
-	return s, nil
-}
-func (a *APIExecutor) gptForWebpageAnalysis(s string) (string, error) {
-	fmt.Print(s)
-	return s, nil
-}
+/*
+	func (a *APIExecutor) gptForTextAlternatives(s string) (string, error) {
+		fmt.Print(s)
+		return s, nil
+	}
 
+	func (a *APIExecutor) gptForCodeParsing(s string) (string, error) {
+		fmt.Print(s)
+		return s, nil
+	}
+
+	func (a *APIExecutor) gptForImage(s string) (string, error) {
+		fmt.Print(s)
+		return s, nil
+	}
+
+	func (a *APIExecutor) gptForWebpageAnalysis(s string) (string, error) {
+		fmt.Print(s)
+		return s, nil
+	}
+*/
 func (a *APIExecutor) Execute() {
 	defer a.cancel()
-}
-
-func (a *APIExecutor) appendTask(action string) {
-	a.tasks = append(a.tasks, action)
+	//figure out how to do error handling
+	a.Tasks.Do(a.ctx)
 }
 
 ///////////////////equivalent to browser.go///////////////////
