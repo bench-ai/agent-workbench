@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Function to add path to file
 add_path_to_file_mac() {
     profile_file=$1
@@ -113,8 +111,6 @@ case "$OS" in
         else
             echo "This is a generic Linux system (distro not identified)."
         fi
-
-        export PATH="$PATH:/usr/local/go/bin"
 
         install_unix
         ;;
