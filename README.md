@@ -15,7 +15,7 @@ GO version 1.22.1
 
 ### Build from Source
 
-#### Linux
+#### Linux / MacOS
 Execute the installation script
 ```shell
 # Make Shell Script executable
@@ -23,23 +23,11 @@ sudo chmod +x install.sh
 ./install.sh
 ```
 
-Add this line to your <code>$HOME/.profile</code>
-```text
-export PATH=$PATH:/usr/local/agent/bin
-```
-
-Reload the profile file
-```shell
-source $HOME/.profile
-```
-
-Check installation works
+Open a new terminal for effects to take place and check installation works
 ```shell
 agent version
 ```
 
-#### MACOS
-...
 #### Windows
 😂😂😂😂
 
