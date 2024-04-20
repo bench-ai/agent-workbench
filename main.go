@@ -1,9 +1,9 @@
 package main
 
 import (
-	"agent/APIs"
 	"agent/browser"
 	"agent/command"
+	"agent/llms"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -20,6 +20,8 @@ type Settings struct {
 
 type Command struct {
 	CommandName string                 `json:"command_name"`
+	CommandType string                 `json:"command_type"`
+	MediaType   string                 `json:"media_type"`
 	Params      map[string]interface{} `json:"params"`
 }
 
@@ -40,15 +42,18 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 	browserBuilder.Execute()
 }
 
-func runLlmCommands(settings Settings, commandList []Command) {
-	var apiBuilder APIs.APIExecutor
-	apiBuilder.Init(settings.Max_Token, settings.Timeout) //need to update in apicalls.go
+func runLlmCommands(settings Settings, commandList []Command) error {
+	var apiBuilder llms.APIExecutor
+	apiBuilder.Init(settings.Max_Token, settings.Timeout)
 
 	for _, com := range commandList {
 		addLlmOperation(com, &apiBuilder)
 	}
 
-	apiBuilder.Execute()
+	if err := apiBuilder.Execute(); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Configuration struct {
@@ -117,7 +122,10 @@ func (r *runCommand) run() {
 		case "browser":
 			runBrowserCommands(op.Settings, op.CommandList)
 		case "llm":
-			runLlmCommands(op.Settings, op.CommandList)
+			err := runLlmCommands(op.Settings, op.CommandList)
+			if err != nil {
+				return
+			}
 		default:
 			log.Fatalf("unknown operation type: %s", op.Type)
 		}
@@ -201,27 +209,25 @@ func addOperation(com Command, builder *browser.Executor) {
 	browserParams.AppendTask(builder)
 }
 
-func addLlmOperation(com Command, builder *APIs.APIExecutor) {
+func addLlmOperation(com Command, builder *llms.APIExecutor) {
 
 	paramBytes, _ := json.Marshal(com.Params)
-	var apiParams APIs.ApiParams
-
-	switch com.CommandName {
-	case "accessLLM":
+	var apiParams llms.ApiParams
+	switch com.CommandType {
+	case "text":
 		fmt.Print("here 1")
-		apiParams = &APIs.ApiAccess{}
-	case "gptForTextAlternatives":
+		apiParams = &llms.TextToAnalyze{}
+	case "multimodal":
 		fmt.Print("here 2")
-		apiParams = &APIs.TextToFix{}
-	case "gptForCodeParsing":
-		fmt.Print("here 3")
-		apiParams = &APIs.CodeToCheck{}
-	case "gptForImage":
-		fmt.Print("here 4")
-		apiParams = &APIs.ImageToCheck{}
-	case "gptForWebpageAnalysis":
-		fmt.Print("here 5")
-		apiParams = &APIs.WebpageToCheck{}
+		switch com.MediaType {
+		case "audio":
+			fmt.Print("here 3")
+		case "video":
+			fmt.Print("here 4")
+		case "image":
+			fmt.Print("here 5")
+			apiParams = &llms.ImageToCheck{}
+		}
 	default:
 		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
 	}
