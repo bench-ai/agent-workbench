@@ -3,6 +3,7 @@ package main
 import (
 	"agent/browser"
 	"agent/command"
+	"agent/llms"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,10 +16,13 @@ import (
 type Settings struct {
 	Timeout  *int16 `json:"timeout"`
 	Headless bool   `json:"headless"`
+	MaxToken *int16 `json:"max_token"`
 }
 
 type Command struct {
 	CommandName string                 `json:"command_name"`
+	CommandType string                 `json:"command_type"`
+	MediaType   string                 `json:"media_type"`
 	Params      map[string]interface{} `json:"params"`
 }
 
@@ -41,6 +45,20 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 	}
 
 	browserBuilder.Execute()
+}
+
+func runLlmCommands(settings Settings, commandList []Command) error {
+	var apiBuilder llms.APIExecutor
+	apiBuilder.Init(settings.MaxToken, settings.Timeout)
+
+	for _, com := range commandList {
+		addLlmOperation(com, &apiBuilder)
+	}
+
+	if err := apiBuilder.Execute(); err != nil {
+		return err
+	}
+	return nil
 }
 
 type runner interface {
@@ -104,6 +122,11 @@ func (r *runCommand) run() {
 		switch op.Type {
 		case "browser":
 			runBrowserCommands(op.Settings, op.CommandList)
+		case "llm":
+			err := runLlmCommands(op.Settings, op.CommandList)
+			if err != nil {
+				return
+			}
 		default:
 			log.Fatalf("unknown operation type: %s", op.Type)
 		}
@@ -185,6 +208,40 @@ func addOperation(com Command, builder *browser.Executor) {
 	}
 
 	browserParams.AppendTask(builder)
+}
+
+func addLlmOperation(com Command, builder *llms.APIExecutor) {
+
+	paramBytes, _ := json.Marshal(com.Params)
+	var apiParams llms.ApiParams
+	switch com.CommandType {
+	case "text":
+		fmt.Print("here 1")
+		apiParams = &llms.TextToAnalyze{}
+	case "multimodal":
+		fmt.Print("here 2")
+		switch com.MediaType {
+		case "audio":
+			fmt.Print("here 3")
+		case "video":
+			fmt.Print("here 4")
+		case "image":
+			fmt.Print("here 5")
+			apiParams = &llms.ImageToCheck{}
+		}
+	default:
+		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
+	}
+
+	if err := json.Unmarshal(paramBytes, apiParams); err != nil {
+		log.Fatalf("failed to parse %s command \n", com.CommandName)
+	}
+
+	if err := apiParams.Validate(); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	apiParams.AppendTask(builder)
 }
 
 // root

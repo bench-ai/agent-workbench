@@ -2,3 +2,4 @@ agent
 .idea/
 config.json
 resources
+.DS_Store
