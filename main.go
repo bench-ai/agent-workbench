@@ -3,6 +3,7 @@ package main
 import (
 	"agent/browser"
 	"agent/command"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -82,7 +83,7 @@ func (r *runCommand) run() {
 	var err error
 
 	if r.configIsJsonString {
-		bytes = []byte(configString)
+		bytes, err = base64.StdEncoding.DecodeString(configString)
 	} else {
 		bytes, err = os.ReadFile(configString)
 	}
@@ -116,9 +117,9 @@ func newRunCommand() *runCommand {
 
 	rc.fs.BoolVar(
 		&rc.configIsJsonString,
-		"j",
+		"b",
 		false,
-		"whether or not the string being provided is a json string")
+		"whether or not the string being provided is a json base64 string")
 
 	return &rc
 }

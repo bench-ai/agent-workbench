@@ -215,9 +215,9 @@ To run the agent simply use the run command and point it to your json file
 agent run ./path/to/my/config.json
 ```
 
-To execute the agent on a raw json string run
+To execute the agent on a base64 json string run
 ```shell
-agent run -j {"operations": [...]}
+agent run -b eyJvcGVyYXRpb...
 ```
 
 
