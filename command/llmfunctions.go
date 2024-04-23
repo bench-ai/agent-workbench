@@ -2,8 +2,15 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 )
+
+// LLM structure definition must be completed
+type LLM struct {
+	//TODO
+}
 
 // Action defines an interface for actions.
 type Action interface {
@@ -20,6 +27,52 @@ func (f FunctionAction) Do(ctx context.Context) error {
 
 // Tasks is a list of actions.
 type Tasks []Action
+
+// ChatRequest Implementation is where the api actually gets called. This should have different cases for each type of model
+func (l *LLM) ChatRequest(llm *LLM, request string) (string, error) {
+	//TODO
+	return "", nil
+}
+
+// exponential backoff function, parameters are subject to change as this just takes in a string for chat request but
+// it should account for if the request is multimodal and has a description or if the request is just text
+func exponentialBackoff(llms []*LLM, chatRequest string, limit int) (string, error) {
+	t := 2 * time.Second // initial sleep duration
+	for _, l := range llms {
+		for x := 0; x < limit; x++ {
+			responseChan := make(chan string)
+			errChan := make(chan error)
+
+			go func() {
+				response, err := l.ChatRequest(l, chatRequest)
+				if err != nil {
+					errChan <- err
+				} else {
+					responseChan <- response
+				}
+			}()
+
+			select {
+			case response := <-responseChan:
+				return response, nil
+			case _, ok := <-errChan:
+				if !ok {
+					continue
+				}
+				if x == limit-1 {
+					return "", errors.New("all attempts failed")
+				}
+
+			case <-time.After(30 * time.Second): // Break if time exceeds 30 seconds
+				break
+			}
+
+			time.Sleep(t)
+			t = time.Duration(int64(t) * int64(t)) // exponential backoff
+		}
+	}
+	return "", errors.New("all attempts failed")
+}
 
 // Do execute all the tasks in the list.
 func (tasks Tasks) Do(ctx context.Context) error {
