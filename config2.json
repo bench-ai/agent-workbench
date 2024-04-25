@@ -9,8 +9,12 @@
         "max_token": 300,
         "llm_settings":
         [
-          {"Name": "OpenAI",
-            "apiKey": "Credentials"}
+          {
+            "Name": "OpenAI",
+            "apiKey": "Credentials",
+            "model": "model",
+            "temperature": "some number between 0 and 1"
+          }
         ],
         "workflow":
         {
@@ -26,7 +30,7 @@
         {
           "params":
           {
-            "command_type": "multimodal",
+            "message_type": "multimodal",
             "to_analyze":
             {
               "History": "History",

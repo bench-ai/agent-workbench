@@ -4,12 +4,14 @@ import (
 	"agent/browser"
 	"agent/command"
 	"agent/llms"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 type Credentials struct {
@@ -21,18 +23,17 @@ type Workflow struct {
 	WorkflowType string `json:"workflow_type"`
 }
 type Settings struct {
-	Timeout     *int16                 `json:"timeout"`
-	Headless    bool                   `json:"headless"`
-	Max_Token   *int16                 `json:"max_token"`
-	Credentials []Credentials          `json:"credentials"`
-	Workflow    Workflow               `json:"workflow"`
-	Memory      *[]string              `json:"memory"`
-	LlmSettings map[string]interface{} `json:"llm_settings"`
+	Timeout     *int16                   `json:"timeout"`
+	Headless    bool                     `json:"headless"`
+	Max_Token   *int16                   `json:"max_token"`
+	Credentials []Credentials            `json:"credentials"`
+	Workflow    Workflow                 `json:"workflow"`
+	Memory      *[]string                `json:"memory"`
+	LlmSettings []map[string]interface{} `json:"llm_settings"`
 }
 
 type Command struct {
 	CommandName string                 `json:"command_name"`
-	CommandType string                 `json:"command_type"`
 	MediaType   string                 `json:"media_type"`
 	Params      map[string]interface{} `json:"params"`
 }
@@ -56,15 +57,27 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 
 // create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
 func runLlmCommands(settings Settings, commandList []Command) error {
-	var apiBuilder llms.APIExecutor
-	apiBuilder.Init(settings.Max_Token, settings.Timeout)
+	tm, cancel := context.WithTimeout(context.Background(), time.Duration(*settings.Timeout)*time.Second)
+	defer cancel()
+	var llmArray []command.LLM
+	for _, item := range settings.LlmSettings {
+
+		name := item["Name"].(string)
+		apiKey := item["apiKey"].(string)
+		model := item["model"].(string)
+		temperature := item["temperature"].(*float32)
+		switch name {
+		case "OpenAI":
+			gpt := command.InitChatgpt(model, apiKey, temperature, tm)
+			llmArray = append(llmArray, gpt)
+		default:
+			log.Fatalf("%s is not a supported llm \n")
+		}
+	}
 	for _, com := range commandList {
 		addLlmOperation(com, &apiBuilder)
 	}
 
-	if err := apiBuilder.Execute(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -222,13 +235,13 @@ func addOperation(com Command, builder *browser.Executor) {
 }
 
 // switch on message_type and builds an array of messages
-func addLlmOperation(com Command, builder *llms.APIExecutor) {
+func addLlmOperation(com Command) {
 
 	paramBytes, _ := json.Marshal(com.Params)
 	var apiParams llms.ApiParams
-	var commandType string
-	commandType = com.Params["command_type"].(string)
-	switch commandType {
+	var messageType string
+	messageType = com.Params["message_type"].(string)
+	switch messageType {
 	case "text":
 		fmt.Print("here 1")
 		apiParams = &llms.TextToAnalyze{}
@@ -257,7 +270,6 @@ func addLlmOperation(com Command, builder *llms.APIExecutor) {
 		log.Fatalf("%v", err)
 	}
 
-	apiParams.AppendTask(builder)
 }
 
 // root

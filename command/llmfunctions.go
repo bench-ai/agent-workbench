@@ -8,8 +8,9 @@ import (
 )
 
 // LLM interface that implements request function
-type LLM struct {
-	//TODO
+type LLM interface {
+	Validate(messageSlice []MessageInterface) error
+	Request(messages []MessageInterface) (error, string)
 }
 
 // Action defines an interface for actions.

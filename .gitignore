@@ -1,5 +1,6 @@
 agent
 .idea/
 config.json
+config2.json
 resources
 .DS_Store
