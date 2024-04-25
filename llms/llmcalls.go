@@ -26,8 +26,8 @@ func (a *APIExecutor) Init(max_token *int16, timeout *int16) *APIExecutor {
 	return a
 }
 
-func (a *APIExecutor) gptForTextAlternatives(text string, prompt string) {
-	a.tasks = append(a.tasks, command.FunctionAction(command.GptForTextAlternatives(text, prompt)))
+func (a *APIExecutor) gptForTextAlternatives(text string, prompt string, memory string) {
+	a.tasks = append(a.tasks, command.FunctionAction(command.GptForTextAlternatives(text, prompt, memory)))
 }
 func (a *APIExecutor) gptForImage(image string, description string, prompt string) {
 	a.tasks = append(a.tasks, command.FunctionAction(command.GptForImage(image, description, prompt)))
@@ -63,6 +63,7 @@ type ApiParams interface {
 type TextToAnalyze struct {
 	Text   string `json:"text"`
 	Prompt string `json:"prompt"`
+	Memory string `json:"memory"`
 }
 
 func (o *TextToAnalyze) Validate() error {
@@ -76,7 +77,7 @@ func (o *TextToAnalyze) Validate() error {
 }
 
 func (o *TextToAnalyze) AppendTask(a *APIExecutor) {
-	a.gptForTextAlternatives(o.Text, o.Prompt)
+	a.gptForTextAlternatives(o.Text, o.Prompt, o.Memory)
 }
 
 //gptForImage

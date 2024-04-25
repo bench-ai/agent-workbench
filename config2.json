@@ -1,0 +1,42 @@
+{
+  "operations":
+  [
+    {
+      "type": "llm",
+      "settings":
+      {
+        "timeout": 2,
+        "max_token": 300,
+        "llm_settings":
+        [
+          {"Name": "OpenAI",
+            "apiKey": "Credentials"}
+        ],
+        "workflow":
+        {
+          "workflow_type": "multimodal_analysis"
+        },
+        "memory":
+        [
+          "memory"
+        ]
+      },
+      "command_list":
+      [
+        {
+          "params":
+          {
+            "command_type": "multimodal",
+            "to_analyze":
+            {
+              "History": "History",
+              "media_source":  "some_text,optional",
+              "description": "some description, optional"
+            },
+            "prompt": "prompt for llm"
+          }
+        }
+      ]
+    }
+  ]
+}

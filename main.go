@@ -12,10 +12,22 @@ import (
 	"os"
 )
 
+type Credentials struct {
+	Name   string `json:"Name"`
+	APIKey string `json:"apiKey"`
+}
+
+type Workflow struct {
+	WorkflowType string `json:"workflow_type"`
+}
 type Settings struct {
-	Timeout   *int16 `json:"timeout"`
-	Headless  bool   `json:"headless"`
-	Max_Token *int16 `json:"max_token"`
+	Timeout     *int16                 `json:"timeout"`
+	Headless    bool                   `json:"headless"`
+	Max_Token   *int16                 `json:"max_token"`
+	Credentials []Credentials          `json:"credentials"`
+	Workflow    Workflow               `json:"workflow"`
+	Memory      *[]string              `json:"memory"`
+	LlmSettings map[string]interface{} `json:"llm_settings"`
 }
 
 type Command struct {
@@ -42,10 +54,10 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 	browserBuilder.Execute()
 }
 
+// create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
 func runLlmCommands(settings Settings, commandList []Command) error {
 	var apiBuilder llms.APIExecutor
 	apiBuilder.Init(settings.Max_Token, settings.Timeout)
-
 	for _, com := range commandList {
 		addLlmOperation(com, &apiBuilder)
 	}
@@ -209,16 +221,19 @@ func addOperation(com Command, builder *browser.Executor) {
 	browserParams.AppendTask(builder)
 }
 
+// switch on message_type and builds an array of messages
 func addLlmOperation(com Command, builder *llms.APIExecutor) {
 
 	paramBytes, _ := json.Marshal(com.Params)
 	var apiParams llms.ApiParams
-	switch com.CommandType {
+	var commandType string
+	commandType = com.Params["command_type"].(string)
+	switch commandType {
 	case "text":
 		fmt.Print("here 1")
 		apiParams = &llms.TextToAnalyze{}
 	case "multimodal":
-		fmt.Print("here 2")
+		fmt.Print("here 2 ")
 		switch com.MediaType {
 		case "audio":
 			fmt.Print("here 3")
@@ -227,9 +242,11 @@ func addLlmOperation(com Command, builder *llms.APIExecutor) {
 		case "image":
 			fmt.Print("here 5")
 			apiParams = &llms.ImageToCheck{}
+		default:
+			log.Fatalf("%s is not a supported media type")
 		}
 	default:
-		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
+		log.Fatalf("%s is not a supported llm command \n", com.CommandName)
 	}
 
 	if err := json.Unmarshal(paramBytes, apiParams); err != nil {

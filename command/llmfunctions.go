@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// LLM structure definition must be completed
+// LLM interface that implements request function
 type LLM struct {
 	//TODO
 }
@@ -29,17 +29,18 @@ func (f FunctionAction) Do(ctx context.Context) error {
 type Tasks []Action
 
 // ChatRequest Implementation is where the api actually gets called. This should have different cases for each type of model
-func (l *LLM) ChatRequest(llm *LLM, request string) (string, error) {
+func (l *LLM) ChatRequest(llm *LLM, chatRequest []string) (string, error) {
 	//TODO
 	return "", nil
 }
 
-// exponential backoff function, parameters are subject to change as this just takes in a string for chat request but
+// exponential backoff function, parameters are subject to change as this just takes in a string for chat request, but
 // it should account for if the request is multimodal and has a description or if the request is just text
-func exponentialBackoff(llms []*LLM, chatRequest string, limit int) (string, error) {
-	t := 2 * time.Second // initial sleep duration
+func exponentialBackoff(llms []*LLM, chatRequest []string, tryLimit int, waitLimit int) (string, error) {
+
 	for _, l := range llms {
-		for x := 0; x < limit; x++ {
+		t := 2 * time.Second // initial sleep duration
+		for x := 0; x < tryLimit; x++ {
 			responseChan := make(chan string)
 			errChan := make(chan error)
 
@@ -59,11 +60,11 @@ func exponentialBackoff(llms []*LLM, chatRequest string, limit int) (string, err
 				if !ok {
 					continue
 				}
-				if x == limit-1 {
+				if x == tryLimit-1 {
 					return "", errors.New("all attempts failed")
 				}
 
-			case <-time.After(30 * time.Second): // Break if time exceeds 30 seconds
+			case <-time.After(time.Duration(int64(waitLimit)) * time.Second): // Break if time exceeds waitLimit minutes
 				break
 			}
 
@@ -85,8 +86,9 @@ func (tasks Tasks) Do(ctx context.Context) error {
 }
 
 // GptForTextAlternatives dummy logic.
-func GptForTextAlternatives(text string, prompt string) func(ctx context.Context) error {
+func GptForTextAlternatives(text string, prompt string, memory string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+
 		fmt.Printf("Executing function GptForTextAlternatives with parameters: %s, %s\n", text, prompt)
 		//simulated error
 		//if the string is an error return error
