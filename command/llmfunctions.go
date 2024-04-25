@@ -58,6 +58,8 @@ func ExponentialBackoff(
 				defer cancel()
 				chatErr, chatCompletion := llm.Request(*chatRequest, ctx)
 
+				fmt.Println(chatErr)
+
 				if chatErr != nil {
 					errChan <- chatErr
 				}

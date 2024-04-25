@@ -22,7 +22,7 @@ type Workflow struct {
 type Settings struct {
 	Timeout     *int16                   `json:"timeout"`
 	Headless    bool                     `json:"headless"`
-	MaxToken    *int16                   `json:"max_token"`
+	MaxToken    *int                     `json:"max_tokens"`
 	Credentials []Credentials            `json:"credentials"`
 	Workflow    Workflow                 `json:"workflow"`
 	LLMSettings []map[string]interface{} `json:"llm_settings"`
@@ -60,7 +60,7 @@ func collectSettings(llmSettings map[string]interface{}, key string, required bo
 	}
 
 	if required {
-		log.Fatalf("key %s not found", key)
+		log.Fatalf(`setting: '%s' not found`, key)
 	}
 
 	return nil
@@ -91,23 +91,16 @@ func runLlmCommands(settings Settings, commandList []Command) (*command.ChatComp
 			}
 
 			temp := collectSettings(item, "temperature", false)
-			var temperature *float32
+			var temperature float64
 			if temp != nil {
-				temperature, ok = temp.(*float32)
-				if !ok {
+				if temperature, ok = temp.(float64); !ok {
 					log.Fatal("temperature must be a float")
 				}
 			}
 
-			maxT := collectSettings(item, "max_tokens", false)
-			var maxTokens *int
-			if maxT != nil {
-				maxTokens, ok = maxT.(*int)
-				if !ok {
-					log.Fatal("max_tokens must be a int")
-				}
-			}
-			gpt := command.InitChatgpt(model, apiKey, maxTokens, temperature)
+			tempfix := float32(temperature)
+
+			gpt := command.InitChatgpt(model, apiKey, settings.MaxToken, &tempfix)
 			llmArray = append(llmArray, gpt)
 		default:
 			log.Fatalf("%s is not a supported llm \n")
@@ -186,7 +179,8 @@ func (r *runCommand) run() {
 			runBrowserCommands(op.Settings, op.CommandList)
 		case "llm":
 			cc, err := runLlmCommands(op.Settings, op.CommandList)
-			fmt.Println(cc)
+			fmt.Println(*cc.Choices[0].Message.Content)
+			fmt.Println(err)
 			if err != nil {
 				return
 			}
