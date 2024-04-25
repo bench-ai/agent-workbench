@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 )
 
 // LLM interface that implements request function
 type LLM interface {
 	Validate(messageSlice []MessageInterface) error
-	Request(messages []MessageInterface) (error, string)
+	Request(messages []MessageInterface, ctx context.Context) (*GptRequestError, *ChatCompletion)
 }
 
 // Action defines an interface for actions.
@@ -29,51 +30,59 @@ func (f FunctionAction) Do(ctx context.Context) error {
 // Tasks is a list of actions.
 type Tasks []Action
 
-// ChatRequest Implementation is where the api actually gets called. This should have different cases for each type of model
-func (l *LLM) ChatRequest(llm *LLM, chatRequest []string) (string, error) {
-	//TODO
-	return "", nil
-}
-
 // exponential backoff function, parameters are subject to change as this just takes in a string for chat request, but
 // it should account for if the request is multimodal and has a description or if the request is just text
-func exponentialBackoff(llms []*LLM, chatRequest []string, tryLimit int, waitLimit int) (string, error) {
+func ExponentialBackoff(
+	llmSlice []LLM,
+	chatRequest *[]MessageInterface,
+	tryLimit int16,
+	requestWaitTime *int16) (*ChatCompletion, error) {
 
-	for _, l := range llms {
-		t := 2 * time.Second // initial sleep duration
-		for x := 0; x < tryLimit; x++ {
-			responseChan := make(chan string)
-			errChan := make(chan error)
+	for _, llm := range llmSlice {
+		coolDown := 2.0 // initial sleep duration
+
+		for range tryLimit {
+			responseChan := make(chan *ChatCompletion)
+			errChan := make(chan *GptRequestError)
+
+			var ctx context.Context
+			var cancel context.CancelFunc
+
+			if requestWaitTime != nil {
+				ctx, cancel = context.WithTimeout(context.Background(), time.Second*time.Duration(*requestWaitTime))
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+			}
 
 			go func() {
-				response, err := l.ChatRequest(l, chatRequest)
-				if err != nil {
-					errChan <- err
-				} else {
-					responseChan <- response
+				defer cancel()
+				chatErr, chatCompletion := llm.Request(*chatRequest, ctx)
+
+				if chatErr != nil {
+					errChan <- chatErr
+				}
+
+				if chatCompletion != nil {
+					responseChan <- chatCompletion
 				}
 			}()
 
 			select {
-			case response := <-responseChan:
-				return response, nil
-			case _, ok := <-errChan:
-				if !ok {
-					continue
-				}
-				if x == tryLimit-1 {
-					return "", errors.New("all attempts failed")
-				}
-
-			case <-time.After(time.Duration(int64(waitLimit)) * time.Second): // Break if time exceeds waitLimit minutes
+			case <-ctx.Done():
 				break
+			case err := <-errChan:
+				if err.StatusCode == 429 {
+					time.Sleep(time.Second * time.Duration(math.Pow(coolDown, 2.0)))
+					coolDown++
+				} else {
+					break
+				}
+			case comp := <-responseChan:
+				return comp, nil
 			}
-
-			time.Sleep(t)
-			t = time.Duration(int64(t) * int64(t)) // exponential backoff
 		}
 	}
-	return "", errors.New("all attempts failed")
+	return nil, errors.New("all attempts failed")
 }
 
 // Do execute all the tasks in the list.

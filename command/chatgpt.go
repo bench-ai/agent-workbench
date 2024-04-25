@@ -197,15 +197,14 @@ type ChatGPT struct {
 	TopP             *float32           `json:"top_p,omitempty"`
 	Tools            *[]Tool            `json:"tools,omitempty"`
 	ToolChoice       interface{}        `json:"tool_choice"`
-	context          context.Context
 	key              string
 }
 
-func InitChatgpt(model, key string, temperature *float32, ctx context.Context) *ChatGPT {
+func InitChatgpt(model, key string, maxTokens *int, temperature *float32) *ChatGPT {
 	c := ChatGPT{
 		Model:       model,
 		Temperature: temperature,
-		context:     ctx,
+		MaxTokens:   maxTokens,
 		key:         key,
 	}
 
@@ -232,7 +231,7 @@ type FullLogprobContent struct {
 type Choice struct {
 	FinishReason string              `json:"finish_reason"`
 	Index        int32               `json:"index"`
-	Message      Message             `json:"MessageInterface"`
+	Message      Message             `json:"message"`
 	Logprobs     *FullLogprobContent `json:"logprobs"`
 }
 
@@ -257,6 +256,18 @@ type ChatCompletion struct {
 		CompletionTokens int32 `json:"completion_tokens"`
 		TotalTokens      int32 `json:"total_tokens"`
 	} `json:"usage"`
+}
+
+type GptError struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Param   string `json:"param"`
+	Code    string `json:"code"`
+}
+
+type GptRequestError struct {
+	StatusCode int      `json:"statusCode"`
+	Error      GptError `json:"error"`
 }
 
 func validateResponseFormat(responseFormat map[string]string, engine Engine) error {
@@ -405,9 +416,11 @@ func (c *ChatGPT) Validate(messageSlice []MessageInterface) error {
 		}
 	}
 
-	for _, i := range *c.Tools {
-		if err := i.validateTools(engine); err != nil {
-			return err
+	if c.Tools != nil {
+		for _, i := range *c.Tools {
+			if err := i.validateTools(engine); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -415,8 +428,10 @@ func (c *ChatGPT) Validate(messageSlice []MessageInterface) error {
 		return err
 	}
 
-	if err := validateToolChoice(c.ToolChoice); err != nil {
-		return err
+	if c.ToolChoice != nil {
+		if err := validateToolChoice(c.ToolChoice); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -427,15 +442,21 @@ TODO
 Add method to estimate context window For multimodal and regular requests
 */
 
-func (c *ChatGPT) Request(messages []MessageInterface) (error, string) {
+func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (*GptRequestError, *ChatCompletion) {
 	lastMessage := messages[len(messages)-1]
 
+	var resp GptRequestError
+
 	if lastMessage.GetRole() != "user" {
-		return errors.New("last MessageInterface is not a user MessageInterface"), ""
+		resp.Error.Message = "last MessageInterface is not a user MessageInterface"
+		resp.StatusCode = 0
+		return &resp, nil
 	}
 
 	if err := c.Validate(messages); err != nil {
-		return err, ""
+		resp.Error.Message = err.Error()
+		resp.StatusCode = 0
+		return &resp, nil
 	}
 
 	url := "https://api.openai.com/v1/chat/completions"
@@ -448,16 +469,20 @@ func (c *ChatGPT) Request(messages []MessageInterface) (error, string) {
 	jsonBytes, err := json.Marshal(c)
 
 	if err != nil {
-		return err, ""
+		resp.Error.Message = err.Error()
+		resp.StatusCode = 0
+		return &resp, nil
 	}
 
 	var client http.Client
 
 	reader := bytes.NewReader(jsonBytes)
-	pRequest, err := http.NewRequestWithContext(c.context, "POST", url, reader)
+	pRequest, err := http.NewRequestWithContext(ctx, "POST", url, reader)
 
 	if err != nil {
-		return err, ""
+		resp.Error.Message = err.Error()
+		resp.StatusCode = 0
+		return &resp, nil
 	}
 
 	pRequest.Header.Set("Content-Type", "application/json")
@@ -466,7 +491,9 @@ func (c *ChatGPT) Request(messages []MessageInterface) (error, string) {
 	pResponse, err := client.Do(pRequest)
 
 	if err != nil {
-		return err, ""
+		resp.Error.Message = err.Error()
+		resp.StatusCode = 0
+		return &resp, nil
 	}
 
 	defer func() {
@@ -479,8 +506,32 @@ func (c *ChatGPT) Request(messages []MessageInterface) (error, string) {
 	responseBytes, err := io.ReadAll(pResponse.Body)
 
 	if err != nil {
-		return err, ""
+		resp.Error.Message = err.Error()
+		resp.StatusCode = 0
+		return &resp, nil
 	}
 
-	return nil, string(responseBytes)
+	if pResponse.StatusCode == 200 {
+
+		var gptResp ChatCompletion
+
+		if err = json.Unmarshal(responseBytes, &gptResp); err != nil {
+			resp.Error.Message = err.Error()
+			resp.StatusCode = 0
+			return &resp, nil
+		}
+
+		return nil, &gptResp
+	} else {
+		resp.StatusCode = pResponse.StatusCode
+
+		if err = json.Unmarshal(responseBytes, &resp); err != nil {
+			resp.StatusCode = 0
+			resp.Error.Message = err.Error()
+			return &resp, nil
+		}
+
+		return &resp, nil
+
+	}
 }

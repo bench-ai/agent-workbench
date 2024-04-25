@@ -3,15 +3,12 @@ package main
 import (
 	"agent/browser"
 	"agent/command"
-	"agent/llms"
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"time"
 )
 
 type Credentials struct {
@@ -25,17 +22,19 @@ type Workflow struct {
 type Settings struct {
 	Timeout     *int16                   `json:"timeout"`
 	Headless    bool                     `json:"headless"`
-	Max_Token   *int16                   `json:"max_token"`
+	MaxToken    *int16                   `json:"max_token"`
 	Credentials []Credentials            `json:"credentials"`
 	Workflow    Workflow                 `json:"workflow"`
-	Memory      *[]string                `json:"memory"`
-	LlmSettings []map[string]interface{} `json:"llm_settings"`
+	LLMSettings []map[string]interface{} `json:"llm_settings"`
+	TryLimit    int16                    `json:"try_limit"`
 }
 
 type Command struct {
 	CommandName string                 `json:"command_name"`
 	MediaType   string                 `json:"media_type"`
 	Params      map[string]interface{} `json:"params"`
+	MessageType string                 `json:"message_type"`
+	Message     map[string]interface{} `json:"message"`
 }
 
 type Operation struct {
@@ -55,30 +54,69 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 	browserBuilder.Execute()
 }
 
-// create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
-func runLlmCommands(settings Settings, commandList []Command) error {
-	tm, cancel := context.WithTimeout(context.Background(), time.Duration(*settings.Timeout)*time.Second)
-	defer cancel()
-	var llmArray []command.LLM
-	for _, item := range settings.LlmSettings {
+func collectSettings(llmSettings map[string]interface{}, key string, required bool) interface{} {
+	if val, ok := llmSettings[key]; ok {
+		return val
+	}
 
-		name := item["Name"].(string)
-		apiKey := item["apiKey"].(string)
-		model := item["model"].(string)
-		temperature := item["temperature"].(*float32)
+	if required {
+		log.Fatalf("key %s not found", key)
+	}
+
+	return nil
+}
+
+// create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
+func runLlmCommands(settings Settings, commandList []Command) (*command.ChatCompletion, error) {
+
+	var llmArray []command.LLM
+	for _, item := range settings.LLMSettings {
+
+		name, ok := item["name"]
+
+		if !ok {
+			log.Fatal("LLM setting name not found")
+		}
+
 		switch name {
 		case "OpenAI":
-			gpt := command.InitChatgpt(model, apiKey, temperature, tm)
+			apiKey, ok := collectSettings(item, "api_key", true).(string)
+			if !ok {
+				log.Fatal("api_key must be a string")
+			}
+
+			model, ok := collectSettings(item, "model", true).(string)
+			if !ok {
+				log.Fatal("model must be a string")
+			}
+
+			temp := collectSettings(item, "temperature", false)
+			var temperature *float32
+			if temp != nil {
+				temperature, ok = temp.(*float32)
+				if !ok {
+					log.Fatal("temperature must be a float")
+				}
+			}
+
+			maxT := collectSettings(item, "max_tokens", false)
+			var maxTokens *int
+			if maxT != nil {
+				maxTokens, ok = maxT.(*int)
+				if !ok {
+					log.Fatal("max_tokens must be a int")
+				}
+			}
+			gpt := command.InitChatgpt(model, apiKey, maxTokens, temperature)
 			llmArray = append(llmArray, gpt)
 		default:
 			log.Fatalf("%s is not a supported llm \n")
 		}
 	}
-	for _, com := range commandList {
-		addLlmOperation(com, &apiBuilder)
-	}
 
-	return nil
+	messageList := addLlmOperation(commandList)
+
+	return command.ExponentialBackoff(llmArray, &messageList, settings.TryLimit, settings.Timeout)
 }
 
 type Configuration struct {
@@ -147,7 +185,8 @@ func (r *runCommand) run() {
 		case "browser":
 			runBrowserCommands(op.Settings, op.CommandList)
 		case "llm":
-			err := runLlmCommands(op.Settings, op.CommandList)
+			cc, err := runLlmCommands(op.Settings, op.CommandList)
+			fmt.Println(cc)
 			if err != nil {
 				return
 			}
@@ -235,41 +274,43 @@ func addOperation(com Command, builder *browser.Executor) {
 }
 
 // switch on message_type and builds an array of messages
-func addLlmOperation(com Command) {
+func addLlmOperation(msgSlice []Command) []command.MessageInterface {
 
-	paramBytes, _ := json.Marshal(com.Params)
-	var apiParams llms.ApiParams
-	var messageType string
-	messageType = com.Params["message_type"].(string)
-	switch messageType {
-	case "text":
-		fmt.Print("here 1")
-		apiParams = &llms.TextToAnalyze{}
-	case "multimodal":
-		fmt.Print("here 2 ")
-		switch com.MediaType {
-		case "audio":
-			fmt.Print("here 3")
-		case "video":
-			fmt.Print("here 4")
-		case "image":
-			fmt.Print("here 5")
-			apiParams = &llms.ImageToCheck{}
-		default:
-			log.Fatalf("%s is not a supported media type")
+	var retSlice []command.MessageInterface
+	for _, msg := range msgSlice {
+		messageType := msg.MessageType
+
+		var message command.MessageInterface
+
+		messageByte, err := json.Marshal(msg.Message)
+
+		if err != nil {
+			log.Fatalf("could not marshal message due to: %v", err)
 		}
-	default:
-		log.Fatalf("%s is not a supported llm command \n", com.CommandName)
+
+		switch messageType {
+		case "multimodal":
+			message = &command.GPTMultiModalCompliantMessage{}
+		case "standard":
+			message = &command.GPTStandardMessage{}
+		case "assistant":
+			message = &command.GptAssistantMessage{}
+		case "tool":
+			message = &command.GptToolMessage{}
+		default:
+			log.Fatalf("%s is not a supported llm message type \n", messageType)
+		}
+
+		err = json.Unmarshal(messageByte, &message)
+
+		if err != nil {
+			log.Fatalf("could not read message due to: %v", err)
+		}
+
+		retSlice = append(retSlice, message)
 	}
 
-	if err := json.Unmarshal(paramBytes, apiParams); err != nil {
-		log.Fatalf("failed to parse %s command \n", com.CommandName)
-	}
-
-	if err := apiParams.Validate(); err != nil {
-		log.Fatalf("%v", err)
-	}
-
+	return retSlice
 }
 
 // root

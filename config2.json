@@ -5,39 +5,42 @@
       "type": "llm",
       "settings":
       {
+        "try_limit": 3,
         "timeout": 2,
-        "max_token": 300,
+        "max_tokens": 300,
         "llm_settings":
         [
           {
-            "Name": "OpenAI",
-            "apiKey": "Credentials",
-            "model": "model",
-            "temperature": "some number between 0 and 1"
+            "name": "OpenAI",
+            "api_Key": "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",
+            "model": "gpt-3.5-turbo",
+            "temperature": 1
           }
         ],
         "workflow":
         {
-          "workflow_type": "multimodal_analysis"
-        },
-        "memory":
-        [
-          "memory"
-        ]
+          "workflow_type": "chat_completion"
+        }
       },
       "command_list":
       [
         {
-          "params":
-          {
-            "message_type": "multimodal",
-            "to_analyze":
-            {
-              "History": "History",
-              "media_source":  "some_text,optional",
-              "description": "some description, optional"
-            },
-            "prompt": "prompt for llm"
+          "message_type": "multimodal",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "what is this?"
+              }
+            ]
+          }
+        },
+        {
+          "message_type": "standard",
+          "message": {
+            "role": "system",
+            "content": "You are a helpful assistant."
           }
         }
       ]
