@@ -10,6 +10,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 )
 
 type MessageInterface interface {
@@ -110,7 +112,10 @@ func (g *GPTMultiModalCompliantMessage) GetRole() string {
 type ToolCall struct {
 	Id       string `json:"id"`
 	Type     string `json:"type"`
-	Function string `json:"function"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type GptAssistantMessage struct {
@@ -185,7 +190,7 @@ type ChatGPT struct {
 	Messages         []MessageInterface `json:"messages"`
 	LogitBias        *map[string]int    `json:"logit_bias,omitempty"`
 	LogProbs         *bool              `json:"log_probs,omitempty"`
-	TopLogprobs      *uint8             `json:"top_logprobs,o,omitempty"`
+	TopLogprobs      *uint8             `json:"top_logprobs,omitempty"`
 	MaxTokens        *int               `json:"max_tokens,omitempty"`
 	N                *int               `json:"n,omitempty"`
 	PresencePenalty  *float32           `json:"presence_penalty,omitempty"`
@@ -212,9 +217,9 @@ func InitChatgpt(model, key string, maxTokens *int, temperature *float32) *ChatG
 }
 
 type Message struct {
-	Content   *string     `json:"content"`
-	ToolCalls []ToolCalls `json:"tool_calls"`
-	Role      string      `json:"role"`
+	Content   *string    `json:"content"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Role      string     `json:"role"`
 }
 
 type LogprobContent struct {
@@ -232,16 +237,7 @@ type Choice struct {
 	FinishReason string              `json:"finish_reason"`
 	Index        int32               `json:"index"`
 	Message      Message             `json:"message"`
-	Logprobs     *FullLogprobContent `json:"logprobs"`
-}
-
-type ToolCalls struct {
-	Id       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
+	Logprobs     *FullLogprobContent `json:"logprobs,omitempty"`
 }
 
 type ChatCompletion struct {
@@ -442,10 +438,22 @@ TODO
 Add method to estimate context window For multimodal and regular requests
 */
 
-func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (*GptRequestError, *ChatCompletion) {
+func (c *ChatGPT) Request(messages []MessageInterface, waitTime *int16) (*GptRequestError, *ChatCompletion) {
 	lastMessage := messages[len(messages)-1]
 
 	var resp GptRequestError
+
+	background := context.Background()
+	var ctx context.Context
+	var cf context.CancelFunc
+
+	if waitTime != nil {
+		ctx, cf = context.WithTimeout(background, time.Second*time.Duration(*waitTime))
+	} else {
+		ctx, cf = context.WithCancel(background)
+	}
+
+	defer cf()
 
 	if lastMessage.GetRole() != "user" {
 		resp.Error.Message = "last MessageInterface is not a user MessageInterface"
@@ -491,8 +499,11 @@ func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (*Gp
 	pResponse, err := client.Do(pRequest)
 
 	if err != nil {
-		resp.Error.Message = err.Error()
 		resp.StatusCode = 0
+		if strings.Contains(err.Error(), "context deadline exceeded") {
+			resp.StatusCode = 1
+		}
+		resp.Error.Message = err.Error()
 		return &resp, nil
 	}
 
@@ -534,4 +545,26 @@ func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (*Gp
 		return &resp, nil
 
 	}
+}
+
+func ConvertChatCompletion(completion *ChatCompletion) *GptAssistantMessage {
+	var message GptAssistantMessage
+	message.Role = completion.Choices[0].Message.Role
+
+	var choiceMessage Choice
+
+	index := int32(0)
+	for _, ch := range completion.Choices {
+		if ch.Index >= index {
+			choiceMessage = ch
+		}
+	}
+
+	if choiceMessage.FinishReason == "tool_calls" {
+		message.ToolCalls = &choiceMessage.Message.ToolCalls
+	} else {
+		message.Content = choiceMessage.Message.Content
+	}
+
+	return &message
 }

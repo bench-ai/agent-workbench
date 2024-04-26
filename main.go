@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 type Credentials struct {
@@ -30,11 +31,10 @@ type Settings struct {
 }
 
 type Command struct {
-	CommandName string                 `json:"command_name"`
-	MediaType   string                 `json:"media_type"`
-	Params      map[string]interface{} `json:"params"`
+	CommandName string                 `json:"command_name,omitempty"`
+	Params      map[string]interface{} `json:"params,omitempty"`
 	MessageType string                 `json:"message_type"`
-	Message     map[string]interface{} `json:"message"`
+	Message     interface{}            `json:"message"`
 }
 
 type Operation struct {
@@ -67,7 +67,7 @@ func collectSettings(llmSettings map[string]interface{}, key string, required bo
 }
 
 // create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
-func runLlmCommands(settings Settings, commandList []Command) (*command.ChatCompletion, error) {
+func runLlmCommands(settings Settings, commandList []Command) {
 
 	var llmArray []command.LLM
 	for _, item := range settings.LLMSettings {
@@ -103,13 +103,55 @@ func runLlmCommands(settings Settings, commandList []Command) (*command.ChatComp
 			gpt := command.InitChatgpt(model, apiKey, settings.MaxToken, &tempfix)
 			llmArray = append(llmArray, gpt)
 		default:
-			log.Fatalf("%s is not a supported llm \n")
+			log.Fatalf("%s is not a supported llm \n", name)
 		}
 	}
 
 	messageList := addLlmOperation(commandList)
 
-	return command.ExponentialBackoff(llmArray, &messageList, settings.TryLimit, settings.Timeout)
+	chat, err := command.ExponentialBackoff(llmArray, &messageList, settings.TryLimit, settings.Timeout)
+
+	if err != nil {
+		log.Fatalf("chat com is not a supported llm \n")
+	}
+
+	for _, sett := range settings.LLMSettings {
+		delete(sett, "api_key")
+	}
+
+	type writeStruct struct {
+		SettingsSlice []map[string]interface{} `json:"settings"`
+		Completion    *command.ChatCompletion  `json:"completion"`
+		MessageList   []Command                `json:"message_list"`
+	}
+
+	msg := command.ConvertChatCompletion(chat)
+	commandList = append(commandList, Command{
+		Message:     msg,
+		MessageType: "assistant",
+	})
+
+	writeData := writeStruct{
+		SettingsSlice: settings.LLMSettings,
+		Completion:    chat,
+		MessageList:   commandList,
+	}
+
+	if er := os.MkdirAll("./resources", os.ModePerm); !os.IsExist(er) && er != nil {
+		log.Fatal("Could not create directory: " + "./resources")
+	}
+
+	b, err := json.MarshalIndent(writeData, "", "    ")
+
+	if err != nil {
+		log.Fatal("Could not marshall llm response")
+	}
+
+	err = os.WriteFile(filepath.Join("./resources", "completion.json"), b, 0666)
+
+	if err != nil {
+		log.Fatal("Could not write llm response")
+	}
 }
 
 type Configuration struct {
@@ -178,12 +220,7 @@ func (r *runCommand) run() {
 		case "browser":
 			runBrowserCommands(op.Settings, op.CommandList)
 		case "llm":
-			cc, err := runLlmCommands(op.Settings, op.CommandList)
-			fmt.Println(*cc.Choices[0].Message.Content)
-			fmt.Println(err)
-			if err != nil {
-				return
-			}
+			runLlmCommands(op.Settings, op.CommandList)
 		default:
 			log.Fatalf("unknown operation type: %s", op.Type)
 		}

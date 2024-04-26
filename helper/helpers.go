@@ -3,7 +3,6 @@ package helper
 import (
 	"cmp"
 	"errors"
-	"fmt"
 )
 
 func Contains[T comparable](slice []T, item T) bool {
@@ -53,6 +52,5 @@ func IsGte[T cmp.Ordered](lowVal, highVal T, checkEqual bool) bool {
 }
 
 func IsBetween[T cmp.Ordered](lowRange, highRange, val T, lte, gte bool) bool {
-	fmt.Println(IsGte[T](lowRange, val, gte))
 	return IsGte[T](lowRange, val, gte) && IsLte[T](val, highRange, lte)
 }
