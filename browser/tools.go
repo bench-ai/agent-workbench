@@ -1,9 +1,9 @@
 package browser
 
 import (
+	"agent/helper"
 	"context"
 	"encoding/json"
-	"errors"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 	"log"
@@ -33,30 +33,6 @@ type Executor struct {
 	imageList []*imageMetaData
 	htmlMap   map[string]*string
 	nodeMap   map[string]*[]*cdp.Node
-}
-
-func DeleteByIndex[T any](s []T, index int) (error, []T) {
-
-	if index >= len(s) {
-		return errors.New("index out of bounds"), nil
-	}
-
-	if index < 0 {
-		return errors.New("index must be >= 0"), nil
-	}
-
-	if index == 0 {
-		return nil, s[1:]
-	}
-
-	if index == len(s)-1 {
-		return nil, s[:len(s)-1]
-	}
-
-	slice1 := s[:index]
-	slice2 := s[index+1:]
-
-	return nil, append(slice1, slice2...)
 }
 
 func (b *Executor) Init(headless bool, timeout *int16) *Executor {
@@ -155,7 +131,7 @@ iterates through nodes and returns structures to recollect them
 */
 func parseThroughNodes(nodeSlice []*cdp.Node) []nodeMetaData {
 
-	deleteByIndex := DeleteByIndex[*cdp.Node]
+	deleteByIndex := helper.DeleteByIndex[*cdp.Node]
 
 	var nodeMetaDataSlice []nodeMetaData
 

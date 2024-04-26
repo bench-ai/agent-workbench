@@ -1,66 +1,56 @@
 package command
 
 import (
-	"context"
-	"fmt"
+	"errors"
+	"math"
+	"time"
 )
 
-// Action defines an interface for actions.
-type Action interface {
-	Do(ctx context.Context) error
+// LLM interface that implements request function
+type LLM interface {
+	Validate(messageSlice []MessageInterface) error
+	Request(messages []MessageInterface, waitTime *int16) (*GptRequestError, *ChatCompletion)
 }
 
-// FunctionAction defines an action based on a function.
-type FunctionAction func(ctx context.Context) error
+// ExponentialBackoff
+/*
+Executes an Api Request to the LLM, switches the LLM based on execution time and availability
+*/
 
-// Do execute the action.
-func (f FunctionAction) Do(ctx context.Context) error {
-	return f(ctx)
-}
+func ExponentialBackoff(
+	llmSlice []LLM,
+	chatRequest *[]MessageInterface,
+	tryLimit int16,
+	requestWaitTime *int16) (*ChatCompletion, error) {
 
-// Tasks is a list of actions.
-type Tasks []Action
+	for _, llm := range llmSlice {
+		exp := 2.0 // initial sleep duration
 
-// Do execute all the tasks in the list.
-func (tasks Tasks) Do(ctx context.Context) error {
-	for _, task := range tasks {
-		if err := task.Do(ctx); err != nil {
-			return err
+		for i := range tryLimit {
+			chatErr, chatCompletion := llm.Request(*chatRequest, requestWaitTime)
+
+			if chatCompletion != nil {
+				return chatCompletion, nil
+			}
+
+			if chatErr != nil {
+				switch chatErr.StatusCode {
+				case 429:
+					if i != (tryLimit - 1) {
+						// Too many requests perform exponential backoff
+						time.Sleep(time.Second * time.Duration(math.Pow(2.0, exp)))
+						exp++
+					}
+				case 1:
+					// Exceeded request time limit
+					break
+				default:
+					// Standard Error return instantly
+					return nil, errors.New(chatErr.Error.Message)
+				}
+			}
 		}
 	}
-	return nil
-}
 
-// GptForTextAlternatives dummy logic.
-func GptForTextAlternatives(text string, prompt string) func(ctx context.Context) error {
-	return func(ctx context.Context) error {
-		fmt.Printf("Executing function GptForTextAlternatives with parameters: %s, %s\n", text, prompt)
-		//simulated error
-		//if the string is an error return error
-		return nil
-	}
-}
-
-// GptForImage dummy logic.
-func GptForImage(image string, description string, prompt string) func(ctx context.Context) error {
-	return func(ctx context.Context) error {
-		fmt.Printf("Executing function GptForImage with parameter: %s, %s, %s\n", image, description, prompt)
-		return nil
-	}
-}
-
-// GptForAudio dummy logic.
-func GptForAudio(audio string, description string, prompt string) func(ctx context.Context) error {
-	return func(ctx context.Context) error {
-		fmt.Printf("Executing function GptForImage with parameter: %s, %s, %s\n", audio, description, prompt)
-		return nil
-	}
-}
-
-// GptForVideo dummy logic.
-func GptForVideo(video string, description string, prompt string) func(ctx context.Context) error {
-	return func(ctx context.Context) error {
-		fmt.Printf("Executing function GptForImage with parameter: %s, %s, %s\n", video, description, prompt)
-		return nil
-	}
+	return nil, errors.New("all attempts failed")
 }
