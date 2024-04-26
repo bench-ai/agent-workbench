@@ -3,33 +3,44 @@ package main
 import (
 	"agent/browser"
 	"agent/command"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
+type Credentials struct {
+	Name   string `json:"Name"`
+	APIKey string `json:"apiKey"`
+}
+
+type Workflow struct {
+	WorkflowType string `json:"workflow_type"`
+}
 type Settings struct {
-	Timeout  *int16 `json:"timeout"`
-	Headless bool   `json:"headless"`
+	Timeout     *int16                   `json:"timeout"`
+	Headless    bool                     `json:"headless"`
+	MaxToken    *int                     `json:"max_tokens"`
+	Credentials []Credentials            `json:"credentials"`
+	Workflow    Workflow                 `json:"workflow"`
+	LLMSettings []map[string]interface{} `json:"llm_settings"`
+	TryLimit    int16                    `json:"try_limit"`
 }
 
 type Command struct {
-	CommandName string                 `json:"command_name"`
-	Params      map[string]interface{} `json:"params"`
+	CommandName string                 `json:"command_name,omitempty"`
+	Params      map[string]interface{} `json:"params,omitempty"`
+	MessageType string                 `json:"message_type"`
+	Message     interface{}            `json:"message"`
 }
 
 type Operation struct {
 	Type        string    `json:"type"`
 	Settings    Settings  `json:"settings"`
 	CommandList []Command `json:"command_list"`
-}
-
-type Configuration struct {
-	Operations []Operation `json:"operations"`
 }
 
 func runBrowserCommands(settings Settings, commandList []Command) {
@@ -41,6 +52,110 @@ func runBrowserCommands(settings Settings, commandList []Command) {
 	}
 
 	browserBuilder.Execute()
+}
+
+func collectSettings(llmSettings map[string]interface{}, key string, required bool) interface{} {
+	if val, ok := llmSettings[key]; ok {
+		return val
+	}
+
+	if required {
+		log.Fatalf(`setting: '%s' not found`, key)
+	}
+
+	return nil
+}
+
+// create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
+func runLlmCommands(settings Settings, commandList []Command) {
+
+	var llmArray []command.LLM
+	for _, item := range settings.LLMSettings {
+
+		name, ok := item["name"]
+
+		if !ok {
+			log.Fatal("LLM setting name not found")
+		}
+
+		switch name {
+		case "OpenAI":
+			apiKey, ok := collectSettings(item, "api_key", true).(string)
+			if !ok {
+				log.Fatal("api_key must be a string")
+			}
+
+			model, ok := collectSettings(item, "model", true).(string)
+			if !ok {
+				log.Fatal("model must be a string")
+			}
+
+			temp := collectSettings(item, "temperature", false)
+			var temperature float64
+			if temp != nil {
+				if temperature, ok = temp.(float64); !ok {
+					log.Fatal("temperature must be a float")
+				}
+			}
+
+			tempfix := float32(temperature)
+
+			gpt := command.InitChatgpt(model, apiKey, settings.MaxToken, &tempfix)
+			llmArray = append(llmArray, gpt)
+		default:
+			log.Fatalf("%s is not a supported llm \n", name)
+		}
+	}
+
+	messageList := addLlmOperation(commandList)
+
+	chat, err := command.ExponentialBackoff(llmArray, &messageList, settings.TryLimit, settings.Timeout)
+
+	if err != nil {
+		log.Fatalf("chat com is not a supported llm \n")
+	}
+
+	for _, sett := range settings.LLMSettings {
+		delete(sett, "api_key")
+	}
+
+	type writeStruct struct {
+		SettingsSlice []map[string]interface{} `json:"settings"`
+		Completion    *command.ChatCompletion  `json:"completion"`
+		MessageList   []Command                `json:"message_list"`
+	}
+
+	msg := command.ConvertChatCompletion(chat)
+	commandList = append(commandList, Command{
+		Message:     msg,
+		MessageType: "assistant",
+	})
+
+	writeData := writeStruct{
+		SettingsSlice: settings.LLMSettings,
+		Completion:    chat,
+		MessageList:   commandList,
+	}
+
+	if er := os.MkdirAll("./resources", os.ModePerm); !os.IsExist(er) && er != nil {
+		log.Fatal("Could not create directory: " + "./resources")
+	}
+
+	b, err := json.MarshalIndent(writeData, "", "    ")
+
+	if err != nil {
+		log.Fatal("Could not marshall llm response")
+	}
+
+	err = os.WriteFile(filepath.Join("./resources", "completion.json"), b, 0666)
+
+	if err != nil {
+		log.Fatal("Could not write llm response")
+	}
+}
+
+type Configuration struct {
+	Operations []Operation `json:"operations"`
 }
 
 type runner interface {
@@ -83,7 +198,7 @@ func (r *runCommand) run() {
 	var err error
 
 	if r.configIsJsonString {
-		bytes, err = base64.StdEncoding.DecodeString(configString)
+		bytes = []byte(configString)
 	} else {
 		bytes, err = os.ReadFile(configString)
 	}
@@ -104,6 +219,8 @@ func (r *runCommand) run() {
 		switch op.Type {
 		case "browser":
 			runBrowserCommands(op.Settings, op.CommandList)
+		case "llm":
+			runLlmCommands(op.Settings, op.CommandList)
 		default:
 			log.Fatalf("unknown operation type: %s", op.Type)
 		}
@@ -117,9 +234,9 @@ func newRunCommand() *runCommand {
 
 	rc.fs.BoolVar(
 		&rc.configIsJsonString,
-		"b",
+		"j",
 		false,
-		"whether or not the string being provided is a json base64 string")
+		"whether or not the string being provided is a json string")
 
 	return &rc
 }
@@ -185,6 +302,46 @@ func addOperation(com Command, builder *browser.Executor) {
 	}
 
 	browserParams.AppendTask(builder)
+}
+
+// switch on message_type and builds an array of messages
+func addLlmOperation(msgSlice []Command) []command.MessageInterface {
+
+	var retSlice []command.MessageInterface
+	for _, msg := range msgSlice {
+		messageType := msg.MessageType
+
+		var message command.MessageInterface
+
+		messageByte, err := json.Marshal(msg.Message)
+
+		if err != nil {
+			log.Fatalf("could not marshal message due to: %v", err)
+		}
+
+		switch messageType {
+		case "multimodal":
+			message = &command.GPTMultiModalCompliantMessage{}
+		case "standard":
+			message = &command.GPTStandardMessage{}
+		case "assistant":
+			message = &command.GptAssistantMessage{}
+		case "tool":
+			message = &command.GptToolMessage{}
+		default:
+			log.Fatalf("%s is not a supported llm message type \n", messageType)
+		}
+
+		err = json.Unmarshal(messageByte, &message)
+
+		if err != nil {
+			log.Fatalf("could not read message due to: %v", err)
+		}
+
+		retSlice = append(retSlice, message)
+	}
+
+	return retSlice
 }
 
 // root
