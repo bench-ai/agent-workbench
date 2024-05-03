@@ -7,6 +7,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"log"
 	"strings"
+	"time"
 )
 
 type Params interface {
@@ -158,4 +159,59 @@ func (s *Sleep) Validate() error {
 
 func (s *Sleep) AppendTask(b *browser.Executor) {
 	b.SleepForSeconds(s.Seconds)
+}
+
+type IterateHtml struct {
+	IterLimit         *uint16 `json:"iter_limit"`
+	PauseTime         *uint32 `json:"pause_time"`
+	StartingSnapshot  *uint8  `json:"starting_snapshot"`
+	SnapshotName      string  `json:"snapshot_name"`
+	SaveHtml          bool    `json:"save_html"`
+	SaveNode          bool    `json:"save_node"`
+	SaveFullPageImage bool    `json:"save_full_page_image"`
+	ImageQuality      uint8   `json:"image_quality"`
+}
+
+func (i *IterateHtml) Validate() error {
+
+	if i.PauseTime == nil {
+		pause := uint32(500)
+		i.PauseTime = &pause
+	}
+
+	if i.IterLimit == nil {
+		iterCount := 10 * time.Minute / (time.Duration(*i.PauseTime) * time.Millisecond)
+		iterCountCeil := uint16(iterCount.Minutes())
+		i.IterLimit = &iterCountCeil
+	}
+
+	if i.StartingSnapshot == nil {
+		ss := uint8(0)
+		i.StartingSnapshot = &ss
+	}
+
+	if i.SnapshotName == "" {
+		return errors.New("snapshot name for iterate html is blank")
+	}
+
+	if i.SaveFullPageImage {
+		if i.ImageQuality == 0 {
+			return errors.New("image quality must be provided and greater than 0")
+		}
+	}
+
+	return nil
+}
+
+func (i *IterateHtml) AppendTask(b *browser.Executor) {
+
+	b.HtmlIterator(
+		*i.IterLimit,
+		*i.PauseTime,
+		*i.StartingSnapshot,
+		i.SnapshotName,
+		i.ImageQuality,
+		i.SaveFullPageImage,
+		i.SaveHtml,
+		i.SaveNode)
 }

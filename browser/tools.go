@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/css"
 	"github.com/chromedp/chromedp"
 	"log"
 	"os"
@@ -17,6 +18,11 @@ type nodeMetaData struct {
 	Type       string            `json:"type"`
 	Xpath      string            `json:"xpath"`
 	Attributes map[string]string `json:"attributes"`
+}
+
+type nodeWithStyles struct {
+	cssStyles []*css.ComputedStyleProperty
+	node      *cdp.Node
 }
 
 type imageMetaData struct {
@@ -46,20 +52,24 @@ func (b *Executor) Init(headless bool, timeout *int16) *Executor {
 			context.Background(),
 			append(
 				chromedp.DefaultExecAllocatorOptions[:],
+				//chromedp.WindowSize(200, 200),
 				chromedp.Flag("headless", false))...)
 
 		b.ctx, b.cancel = chromedp.NewContext(
 			actx,
-			chromedp.WithLogf(log.Printf),
-			chromedp.WithErrorf(log.Printf))
+			//chromedp.WithLogf(log.Printf),
+			//chromedp.WithDebugf(log.Printf),
+			//chromedp.WithErrorf(log.Printf))
+		)
 	}
 
 	if timeout != nil {
 		b.ctx, b.cancel = context.WithTimeout(b.ctx, time.Duration(*timeout)*time.Second)
 	}
 
-	b.htmlMap = map[string]*string{}
-	b.nodeMap = map[string]*[]*cdp.Node{}
+	b.htmlMap = make(map[string]*string)
+	b.nodeMap = make(map[string]*[]*cdp.Node)
+	b.imageList = make([]*imageMetaData, 0, 10)
 
 	return b
 }
@@ -87,8 +97,8 @@ func (b *Executor) FullPageScreenShot(quality uint8, name, snapshot string) {
 func (b *Executor) ElementScreenshot(scale float64, selector string, name, snapshot string) {
 	var buf []byte
 	var imageData imageMetaData
-
-	b.appendTask(chromedp.ScreenshotScale(selector, scale, &buf, chromedp.BySearch, chromedp.NodeVisible))
+	b.appendTask(chromedp.WaitVisible(selector))
+	b.appendTask(chromedp.ScreenshotScale(selector, scale, &buf, chromedp.NodeVisible))
 
 	imageData.byteData = &buf
 	imageData.snapShotName = snapshot
@@ -174,6 +184,14 @@ func createSnapshotFolder(snapshot string) string {
 	return folderPath
 }
 
+func getPopulatedNodes(selector string, nodeSlice *[]*cdp.Node) chromedp.QueryAction {
+	return chromedp.Nodes(
+		selector,
+		nodeSlice,
+		chromedp.Populate(-1, true, chromedp.PopulateWait(1*time.Second)),
+	)
+}
+
 // CollectNodes
 /*
 Collect all element nodes in the html webpage
@@ -185,8 +203,39 @@ func (b *Executor) CollectNodes(selector, snapshotName string, waitReady bool) {
 		b.appendTask(chromedp.WaitReady(selector))
 	}
 
-	b.appendTask(chromedp.Nodes(selector, &nodeSlice))
+	b.appendTask(
+		getPopulatedNodes(selector, &nodeSlice),
+	)
+
 	b.nodeMap[snapshotName] = &nodeSlice
+}
+
+func (b *Executor) HtmlIterator(
+	iterLimit uint16,
+	pauseTime uint32,
+	startingSnapshot uint8,
+	snapshotName string,
+	imageQuality uint8,
+	saveImg bool,
+	saveHtml bool,
+	saveNodes bool,
+) {
+
+	pImgList := &b.imageList
+	if !saveImg {
+		pImgList = nil
+	}
+
+	pHtmlMap := b.htmlMap
+	if !saveHtml {
+		pHtmlMap = nil
+	}
+
+	b.appendTask(
+		htmlIteratorAction(
+			iterLimit, pauseTime, startingSnapshot, snapshotName, imageQuality, pHtmlMap, nil, pImgList,
+		),
+	)
 }
 
 func (b *Executor) Execute() {
