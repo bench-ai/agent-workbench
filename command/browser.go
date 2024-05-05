@@ -83,6 +83,9 @@ func (e *ElementScreenshot) AppendTask(b *browser.Executor) {
 type CollectNodes struct {
 	Selector       string `json:"selector"`
 	WaitReady      bool   `json:"wait_ready"`
+	GetStyles      bool   `json:"get_styles"`
+	Prepopulate    bool   `json:"prepopulate"`
+	Recurse        bool   `json:"recurse"`
 	SnapShotFolder string `json:"snap_shot_name"`
 }
 
@@ -94,7 +97,7 @@ func (c *CollectNodes) Validate() error {
 }
 
 func (c *CollectNodes) AppendTask(b *browser.Executor) {
-	b.CollectNodes(c.Selector, c.SnapShotFolder, c.WaitReady)
+	b.CollectNodes(c.Selector, c.SnapShotFolder, c.Prepopulate, c.WaitReady, c.Recurse, c.GetStyles)
 }
 
 type Click struct {

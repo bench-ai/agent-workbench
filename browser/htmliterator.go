@@ -2,15 +2,76 @@ package browser
 
 import (
 	"agent/helper"
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/css"
 	"github.com/chromedp/chromedp"
+	"image"
+	"image/jpeg"
 	"time"
 )
 
-func compareNodes(n1, n2 *cdp.Node) bool {
+// compareImages
+/**
+checks whether images (which are jpegs are equal)
+
+TODO: Add potential percentage similarity i.e. return true > img1 matches 90% of img2
+*/
+func compareImages(imgBytesOriginal, imgBytesNew *[]byte) (bool, error) {
+	imgOne, err := jpeg.Decode(bytes.NewReader(*imgBytesOriginal))
+
+	if err != nil {
+		return false, err
+	}
+
+	imgTwo, _, err := image.Decode(bytes.NewReader(*imgBytesNew))
+
+	if err != nil {
+		return false, err
+	}
+
+	boundsOne := imgOne.Bounds()
+	boundsTwo := imgTwo.Bounds()
+	if boundsOne.Dx() != boundsTwo.Dx() || boundsOne.Dy() != boundsTwo.Dy() {
+		return false, nil
+	}
+
+	for y := boundsOne.Min.Y; y < boundsOne.Max.Y; y++ {
+		for x := boundsOne.Min.X; x < boundsOne.Max.X; x++ {
+			pixelOne := imgOne.At(x, y)
+			pixelTwo := imgTwo.At(x, y)
+			if pixelOne != pixelTwo {
+				fmt.Println(pixelOne, pixelTwo)
+				return false, nil
+			}
+		}
+	}
+
+	return true, nil
+}
+
+// containsImage
+/*
+check if an image is present in array of images
+*/
+func containsImage(newBytes *[]byte, imgSlice []*[]byte) bool {
+
+	for _, oldBytes := range imgSlice {
+		if isEq, err := compareImages(oldBytes, newBytes); err == nil && isEq {
+			return true
+		}
+	}
+
+	return false
+}
+
+// nodesAreEqual
+/*
+check with two nodes share the same metadata (in some categories)
+*/
+func nodesAreEqual(n1, n2 *cdp.Node) bool {
 	if n1.NodeID != n2.NodeID {
 		return false
 	}
@@ -48,6 +109,10 @@ func compareNodes(n1, n2 *cdp.Node) bool {
 	return true
 }
 
+// flattenNode
+/*
+traverses the node tree using BFS, and adds all child nodes to the node pointer slice
+*/
 func flattenNode(nodeSlice []*cdp.Node) []*cdp.Node {
 	deleteByIndex := helper.DeleteByIndex[*cdp.Node]
 
@@ -62,6 +127,10 @@ func flattenNode(nodeSlice []*cdp.Node) []*cdp.Node {
 	return newNodeSlice
 }
 
+// equalStyles
+/*
+checks whether 2 cssStyles are exactly the same
+*/
 func equalStyles(originalStyles, newStyles []*css.ComputedStyleProperty) bool {
 
 	if len(originalStyles) != len(newStyles) {
@@ -77,30 +146,27 @@ func equalStyles(originalStyles, newStyles []*css.ComputedStyleProperty) bool {
 	return true
 }
 
-func nodeToMap(nodeSLice []*cdp.Node, ctx context.Context) (error, map[cdp.NodeID][]*nodeWithStyles) {
+// nodeToMap
+/*
+creates a map of the nodeId with a value of the array of all node instances with the same ID
+useful for comparisons to see if node repeats
+*/
+func nodeToMap(nodeSLice []*nodeWithStyles) (error, map[cdp.NodeID][]*nodeWithStyles) {
 	nodeMap := map[cdp.NodeID][]*nodeWithStyles{}
 
-	for _, node := range nodeSLice {
-
-		styles, err := css.GetComputedStyleForNode(node.NodeID).Do(ctx)
-
-		if err != nil {
-			return err, nil
-		}
-
-		styledNode := nodeWithStyles{
-			node:      node,
-			cssStyles: styles,
-		}
-
-		nodeMap[node.NodeID] = []*nodeWithStyles{
-			&styledNode,
+	for _, styledNode := range nodeSLice {
+		nodeMap[styledNode.node.NodeID] = []*nodeWithStyles{
+			styledNode,
 		}
 	}
 
 	return nil, nodeMap
 }
 
+// mergeNodeMap
+/*
+merges 2 node maps
+*/
 func mergeNodeMap(newMap, originalMap map[cdp.NodeID][]*nodeWithStyles) map[cdp.NodeID][]*nodeWithStyles {
 	for key, val := range newMap {
 		if slice, ok := originalMap[key]; ok {
@@ -114,18 +180,39 @@ func mergeNodeMap(newMap, originalMap map[cdp.NodeID][]*nodeWithStyles) map[cdp.
 	return originalMap
 }
 
-func checkPageTransition(dataMap map[cdp.NodeID][]*nodeWithStyles) bool {
-	for _, nodeList := range dataMap {
-		lastNode := nodeList[len(nodeList)-1]
+// checkPageTransition
+/*
+Checks if the webpage has changed to a unique look. Each transition is compared against previous transitions
+*/
+func checkPageTransition(
+	dataMap map[cdp.NodeID][]*nodeWithStyles,
+	byteCollection []*[]byte,
+) bool {
+	lastByte := byteCollection[len(byteCollection)-1]
 
+	// checks whether the current image snapshot is present in all other snapshots if so return false
+	if containsImage(lastByte, byteCollection[:len(byteCollection)-1]) {
+		return false
+	}
+
+	// if the image is different it most likely means the page has
+	// transitioned. However, we double-check using the nodes
+
+	// iterate through each node in a webpage
+	for _, nodeList := range dataMap {
+		lastNode := nodeList[len(nodeList)-1] // represents the current node for the most recent snapshot
 		unique := true
+
+		// iterate through all other node snapshots
 		for _, node := range nodeList[:len(nodeList)-1] {
-			if compareNodes(node.node, lastNode.node) && equalStyles(node.cssStyles, lastNode.cssStyles) {
+			if nodesAreEqual(node.node, lastNode.node) && equalStyles(node.cssStyles, lastNode.cssStyles) {
 				unique = false
+				break
 			}
 		}
 
 		if unique {
+			// found no other nodes matching this one in the snapshot return true
 			return unique
 		}
 	}
@@ -133,7 +220,15 @@ func checkPageTransition(dataMap map[cdp.NodeID][]*nodeWithStyles) bool {
 	return false
 }
 
-func writeImg(snapshot string, imageQuality uint8, ctx context.Context) (error, *imageMetaData) {
+// writeImg
+/*
+saves the current image for writing
+*/
+func writeImg(
+	snapshot string,
+	imageQuality uint8,
+	ctx context.Context) (error, *imageMetaData) {
+
 	var byteSlice []byte
 
 	imgMetaData := imageMetaData{
@@ -150,6 +245,10 @@ func writeImg(snapshot string, imageQuality uint8, ctx context.Context) (error, 
 	return nil, &imgMetaData
 }
 
+// writeHtml
+/*
+saves the current html for writing
+*/
 func writeHtml(ctx context.Context) (error, string) {
 	var html string
 	err := chromedp.OuterHTML("body", &html).Do(ctx)
@@ -160,29 +259,20 @@ func writeHtml(ctx context.Context) (error, string) {
 	return nil, html
 }
 
+// saveSnapshot
+/*
+saves a snapshot with all the wanted files
+*/
 func saveSnapshot(
-	startingSnapshot uint8,
-	snapshotName string,
-	imageQuality uint8,
 	htmlMap map[string]*string,
-	saveNode *[]*cdp.Node,
+	saveNode map[string]*[]*nodeWithStyles,
+	nodeSlice []*nodeWithStyles,
 	fullPageImgSlice *[]*imageMetaData,
+	imgMD *imageMetaData,
 	ctx context.Context,
-	startTime time.Time) error {
-
-	currentTime := time.Now()
-
-	diff := currentTime.Sub(startTime)
-
-	snapshot := fmt.Sprintf(
-		"%s_%d_%d_ms", snapshotName, startingSnapshot, diff.Milliseconds(),
-	)
+	snapshot string) error {
 
 	if fullPageImgSlice != nil {
-		err, imgMD := writeImg(snapshot, imageQuality, ctx)
-		if err != nil {
-			return err
-		}
 		*fullPageImgSlice = append(*fullPageImgSlice, imgMD)
 	}
 
@@ -194,15 +284,18 @@ func saveSnapshot(
 		htmlMap[snapshot] = &html
 	}
 
+	if saveNode != nil {
+		saveNode[snapshot] = &nodeSlice
+	}
+
 	return nil
 }
 
 /**
 TODO In order of priority
-1) Add ability to write nodes
 2) add code to click and screenshot all elements
+3) add check limit
 3) unit test
-4) add ability to save css
 5) speed up the iterator action
 */
 
@@ -213,7 +306,7 @@ func htmlIteratorAction(
 	snapshotName string,
 	imageQuality uint8,
 	htmlMap map[string]*string,
-	saveNode *[]*cdp.Node,
+	saveNode map[string]*[]*nodeWithStyles,
 	fullPageImgSlice *[]*imageMetaData,
 ) chromedp.Tasks {
 
@@ -222,13 +315,27 @@ func htmlIteratorAction(
 
 			startTime := time.Now()
 
-			var nodeSlice []*cdp.Node
+			var pByteCollection []*[]byte
+
+			nodeSlice := make([]*nodeWithStyles, 0, 10)
 			err := chromedp.Sleep(time.Second * 5).Do(c)
 			if err != nil {
 				return err
 			}
 
-			err = getPopulatedNodes("body", &nodeSlice).Do(c)
+			currentTime := time.Now()
+			diff := currentTime.Sub(startTime)
+			snapshot := fmt.Sprintf(
+				"%s_%d_%d_ms", snapshotName, startingSnapshot, diff.Milliseconds(),
+			)
+
+			err, imgMD := writeImg(snapshot, imageQuality, c)
+			pByteCollection = append(pByteCollection, imgMD.byteData)
+			if err != nil {
+				return err
+			}
+
+			err = populatedNodeAction("body", true, true, &nodeSlice).Do(c)
 			if err != nil {
 				return err
 			}
@@ -236,20 +343,19 @@ func htmlIteratorAction(
 			count := uint16(0)
 
 			err = saveSnapshot(
-				startingSnapshot,
-				snapshotName,
-				imageQuality,
 				htmlMap,
 				saveNode,
+				nodeSlice,
 				fullPageImgSlice,
+				imgMD,
 				c,
-				startTime)
+				snapshot)
 
 			if err != nil {
 				return err
 			}
 
-			err, nodeMap := nodeToMap(flattenNode(nodeSlice), c)
+			err, nodeMap := nodeToMap(nodeSlice)
 
 			if err != nil {
 				return err
@@ -257,39 +363,69 @@ func htmlIteratorAction(
 
 			ticker := time.NewTicker(time.Duration(pauseTime) * time.Millisecond)
 
+			hitLimit := 10
+			hitCount := 0
+
 			for range ticker.C {
 				count++
 				startingSnapshot++
 
-				var currentNodeSlice []*cdp.Node
-				err = getPopulatedNodes("body", &currentNodeSlice).Do(c)
+				fmt.Println("on iteration", count)
+
+				currentTime = time.Now()
+				diff = currentTime.Sub(startTime)
+				snapshot = fmt.Sprintf(
+					"%s_%d_%d_ms", snapshotName, startingSnapshot, diff.Milliseconds(),
+				)
+
+				err, imgMD = writeImg(snapshot, imageQuality, c)
+				if err != nil {
+					return err
+				}
+				pByteCollection = append(pByteCollection, imgMD.byteData)
+				currentNodeSlice := make([]*nodeWithStyles, 0, 10)
+				err = populatedNodeAction("body", true, true, &currentNodeSlice).Do(c)
 				if err != nil {
 					return err
 				}
 
-				err, currentNodeMap := nodeToMap(flattenNode(nodeSlice), c)
+				err, currentNodeMap := nodeToMap(currentNodeSlice)
+
 				if err != nil {
 					return err
 				}
 
-				nodeMap = mergeNodeMap(nodeMap, currentNodeMap)
+				nodeMap = mergeNodeMap(currentNodeMap, nodeMap)
 
-				if checkPageTransition(nodeMap) {
+				if err != nil {
+					return err
+				}
+
+				if checkPageTransition(nodeMap, pByteCollection) {
+
+					hitCount = 0
+
 					err = saveSnapshot(
-						startingSnapshot,
-						snapshotName,
-						imageQuality,
 						htmlMap,
 						saveNode,
+						currentNodeSlice,
 						fullPageImgSlice,
+						imgMD,
 						c,
-						startTime)
+						snapshot)
+
+					fmt.Println(compareImages((*fullPageImgSlice)[0].byteData, (*fullPageImgSlice)[1].byteData))
 
 					if err != nil {
 						return err
 					}
+
 				} else {
-					break
+					hitCount++
+					fmt.Println("on hit: ", hitCount)
+					if hitCount == hitLimit {
+						return nil
+					}
 				}
 
 				if count == iterLimit {
