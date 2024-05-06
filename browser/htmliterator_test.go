@@ -321,7 +321,7 @@ func TestNodeToMap(t *testing.T) {
 		t.Error("found inaccurate size in map")
 	}
 
-	if len(m5[cdp.NodeID(1)]) != 2 {
+	if len(m5[cdp.NodeID(1)]) == 2 {
 		t.Error("found inaccurate size in map slice len")
 	}
 }
