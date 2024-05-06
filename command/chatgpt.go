@@ -319,7 +319,7 @@ func validateToolChoice(toolChoice interface{}) error {
 	valType, ok := val["type"]
 
 	if !ok {
-		return errors.New("tool choice map  missing type key")
+		return errors.New("tool choice map missing type key")
 	}
 
 	typeString, ok := valType.(string)
@@ -344,7 +344,11 @@ func validateToolChoice(toolChoice interface{}) error {
 
 	functionDefintion, ok := functionInterface.(map[string]string)
 
-	if _, ok := functionDefintion["name"]; !ok {
+	if !ok {
+		return errors.New("definition must be of type object")
+	}
+
+	if _, ok = functionDefintion["name"]; !ok {
 		return errors.New("missing function name")
 	}
 

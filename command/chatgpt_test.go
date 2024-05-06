@@ -32,7 +32,7 @@ func TestValidateResponseFormat(t *testing.T) {
 		},
 	}
 
-	engine, _ := getEngineMap()["gpt-3.5-turbo-1106"]
+	engine := getEngineMap()["gpt-3.5-turbo-1106"]
 
 	for _, m := range failTable {
 		if err := validateResponseFormat(m, engine); err == nil {
@@ -46,7 +46,7 @@ func TestValidateResponseFormat(t *testing.T) {
 		}
 	}
 
-	engine, _ = getEngineMap()["gpt-3.5-turbo"]
+	engine = getEngineMap()["gpt-3.5-turbo"]
 
 	if err := validateResponseFormat(passTable[1], engine); err == nil {
 		t.Error("response format failed to detect invalid engine")
@@ -65,7 +65,7 @@ func TestValidateTools(t *testing.T) {
 		Function: func1,
 	}
 
-	engine, _ := getEngineMap()["gpt-3.5-turbo-1106"]
+	engine := getEngineMap()["gpt-3.5-turbo-1106"]
 	if err := t1.validateTools(engine); err != nil {
 		t.Error("rejected function that was not invalid")
 	}
