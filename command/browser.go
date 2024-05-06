@@ -7,6 +7,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"log"
 	"strings"
+	"time"
 )
 
 type Params interface {
@@ -82,6 +83,9 @@ func (e *ElementScreenshot) AppendTask(b *browser.Executor) {
 type CollectNodes struct {
 	Selector       string `json:"selector"`
 	WaitReady      bool   `json:"wait_ready"`
+	GetStyles      bool   `json:"get_styles"`
+	Prepopulate    bool   `json:"prepopulate"`
+	Recurse        bool   `json:"recurse"`
 	SnapShotFolder string `json:"snap_shot_name"`
 }
 
@@ -93,7 +97,7 @@ func (c *CollectNodes) Validate() error {
 }
 
 func (c *CollectNodes) AppendTask(b *browser.Executor) {
-	b.CollectNodes(c.Selector, c.SnapShotFolder, c.WaitReady)
+	b.CollectNodes(c.Selector, c.SnapShotFolder, c.Prepopulate, c.WaitReady, c.Recurse, c.GetStyles)
 }
 
 type Click struct {
@@ -158,4 +162,59 @@ func (s *Sleep) Validate() error {
 
 func (s *Sleep) AppendTask(b *browser.Executor) {
 	b.SleepForSeconds(s.Seconds)
+}
+
+type IterateHtml struct {
+	IterLimit         *uint16 `json:"iter_limit"`
+	PauseTime         *uint32 `json:"pause_time"`
+	StartingSnapshot  *uint8  `json:"starting_snapshot"`
+	SnapshotName      string  `json:"snapshot_name"`
+	SaveHtml          bool    `json:"save_html"`
+	SaveNode          bool    `json:"save_node"`
+	SaveFullPageImage bool    `json:"save_full_page_image"`
+	ImageQuality      uint8   `json:"image_quality"`
+}
+
+func (i *IterateHtml) Validate() error {
+
+	if i.PauseTime == nil {
+		pause := uint32(500)
+		i.PauseTime = &pause
+	}
+
+	if i.IterLimit == nil {
+		iterCount := 10 * time.Minute / (time.Duration(*i.PauseTime) * time.Millisecond)
+		iterCountCeil := uint16(iterCount.Minutes())
+		i.IterLimit = &iterCountCeil
+	}
+
+	if i.StartingSnapshot == nil {
+		ss := uint8(0)
+		i.StartingSnapshot = &ss
+	}
+
+	if i.SnapshotName == "" {
+		return errors.New("snapshot name for iterate html is blank")
+	}
+
+	if i.SaveFullPageImage {
+		if i.ImageQuality == 0 {
+			return errors.New("image quality must be provided and greater than 0")
+		}
+	}
+
+	return nil
+}
+
+func (i *IterateHtml) AppendTask(b *browser.Executor) {
+
+	b.HtmlIterator(
+		*i.IterLimit,
+		*i.PauseTime,
+		*i.StartingSnapshot,
+		i.SnapshotName,
+		i.ImageQuality,
+		i.SaveFullPageImage,
+		i.SaveHtml,
+		i.SaveNode)
 }

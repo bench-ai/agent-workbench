@@ -70,6 +70,7 @@ func collectSettings(llmSettings map[string]interface{}, key string, required bo
 func runLlmCommands(settings Settings, commandList []Command) {
 
 	var llmArray []command.LLM
+
 	for _, item := range settings.LLMSettings {
 
 		name, ok := item["name"]
@@ -112,7 +113,7 @@ func runLlmCommands(settings Settings, commandList []Command) {
 	chat, err := command.ExponentialBackoff(llmArray, &messageList, settings.TryLimit, settings.Timeout)
 
 	if err != nil {
-		log.Fatalf("chat com is not a supported llm \n")
+		log.Fatalf("could not execute command %v", err)
 	}
 
 	for _, sett := range settings.LLMSettings {
@@ -289,6 +290,8 @@ func addOperation(com Command, builder *browser.Executor) {
 		browserParams = &command.SaveHtml{}
 	case "sleep":
 		browserParams = &command.Sleep{}
+	case "iterate_html":
+		browserParams = &command.IterateHtml{}
 	default:
 		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
 	}
