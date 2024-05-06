@@ -10,6 +10,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"image"
 	"image/jpeg"
+	"log"
 	"time"
 )
 
@@ -19,37 +20,26 @@ checks whether images (which are jpegs are equal)
 
 TODO: Add potential percentage similarity i.e. return true > img1 matches 90% of img2
 */
-func compareImages(imgBytesOriginal, imgBytesNew *[]byte) (bool, error) {
-	imgOne, err := jpeg.Decode(bytes.NewReader(*imgBytesOriginal))
+func compareImages(imgOne, imgTwo *image.Image) bool {
 
-	if err != nil {
-		return false, err
-	}
+	boundsOne := (*imgOne).Bounds()
+	boundsTwo := (*imgTwo).Bounds()
 
-	imgTwo, _, err := image.Decode(bytes.NewReader(*imgBytesNew))
-
-	if err != nil {
-		return false, err
-	}
-
-	boundsOne := imgOne.Bounds()
-	boundsTwo := imgTwo.Bounds()
 	if boundsOne.Dx() != boundsTwo.Dx() || boundsOne.Dy() != boundsTwo.Dy() {
-		return false, nil
+		return false
 	}
 
 	for y := boundsOne.Min.Y; y < boundsOne.Max.Y; y++ {
 		for x := boundsOne.Min.X; x < boundsOne.Max.X; x++ {
-			pixelOne := imgOne.At(x, y)
-			pixelTwo := imgTwo.At(x, y)
+			pixelOne := (*imgOne).At(x, y)
+			pixelTwo := (*imgTwo).At(x, y)
 			if pixelOne != pixelTwo {
-				fmt.Println(pixelOne, pixelTwo)
-				return false, nil
+				return false
 			}
 		}
 	}
 
-	return true, nil
+	return true
 }
 
 // containsImage
@@ -58,8 +48,21 @@ check if an image is present in array of images
 */
 func containsImage(newBytes *[]byte, imgSlice []*[]byte) bool {
 
+	newImage, err := jpeg.Decode(bytes.NewReader(*newBytes))
+
+	if err != nil {
+		log.Fatal("could not convert image to jpeg", err)
+	}
+
 	for _, oldBytes := range imgSlice {
-		if isEq, err := compareImages(oldBytes, newBytes); err == nil && isEq {
+
+		oldImage, _, err := image.Decode(bytes.NewReader(*oldBytes))
+
+		if err != nil {
+			log.Fatal("could not convert image to jpeg", err)
+		}
+
+		if compareImages(&oldImage, &newImage) {
 			return true
 		}
 	}
@@ -97,6 +100,10 @@ func nodesAreEqual(n1, n2 *cdp.Node) bool {
 	}
 
 	if n1.NodeValue != n2.NodeValue {
+		return false
+	}
+
+	if len(n2.Attributes) != len(n1.Attributes) {
 		return false
 	}
 
@@ -151,7 +158,7 @@ func equalStyles(originalStyles, newStyles []*css.ComputedStyleProperty) bool {
 creates a map of the nodeId with a value of the array of all node instances with the same ID
 useful for comparisons to see if node repeats
 */
-func nodeToMap(nodeSLice []*nodeWithStyles) (error, map[cdp.NodeID][]*nodeWithStyles) {
+func nodeToMap(nodeSLice []*nodeWithStyles) map[cdp.NodeID][]*nodeWithStyles {
 	nodeMap := map[cdp.NodeID][]*nodeWithStyles{}
 
 	for _, styledNode := range nodeSLice {
@@ -160,7 +167,7 @@ func nodeToMap(nodeSLice []*nodeWithStyles) (error, map[cdp.NodeID][]*nodeWithSt
 		}
 	}
 
-	return nil, nodeMap
+	return nodeMap
 }
 
 // mergeNodeMap
@@ -299,6 +306,10 @@ TODO In order of priority
 5) speed up the iterator action
 */
 
+// htmlIteratorAction
+/*
+collects all unique transition snapshots
+*/
 func htmlIteratorAction(
 	iterLimit uint16,
 	pauseTime uint32,
@@ -314,34 +325,29 @@ func htmlIteratorAction(
 		chromedp.ActionFunc(func(c context.Context) error {
 
 			startTime := time.Now()
-
 			var pByteCollection []*[]byte
-
 			nodeSlice := make([]*nodeWithStyles, 0, 10)
-			err := chromedp.Sleep(time.Second * 5).Do(c)
+
+			err := chromedp.Sleep(time.Second * 5).Do(c) //wait for website to settle down
 			if err != nil {
 				return err
 			}
 
+			// save initial snapshot
 			currentTime := time.Now()
 			diff := currentTime.Sub(startTime)
 			snapshot := fmt.Sprintf(
 				"%s_%d_%d_ms", snapshotName, startingSnapshot, diff.Milliseconds(),
 			)
-
 			err, imgMD := writeImg(snapshot, imageQuality, c)
 			pByteCollection = append(pByteCollection, imgMD.byteData)
 			if err != nil {
 				return err
 			}
-
 			err = populatedNodeAction("body", true, true, &nodeSlice).Do(c)
 			if err != nil {
 				return err
 			}
-
-			count := uint16(0)
-
 			err = saveSnapshot(
 				htmlMap,
 				saveNode,
@@ -350,34 +356,27 @@ func htmlIteratorAction(
 				imgMD,
 				c,
 				snapshot)
-
 			if err != nil {
 				return err
 			}
 
-			err, nodeMap := nodeToMap(nodeSlice)
-
-			if err != nil {
-				return err
-			}
+			nodeMap := nodeToMap(nodeSlice)
 
 			ticker := time.NewTicker(time.Duration(pauseTime) * time.Millisecond)
 
-			hitLimit := 10
+			hitLimit := 10 //program will only return after consecutively not having a unique transition this many times
 			hitCount := 0
+			count := uint16(0)
 
 			for range ticker.C {
 				count++
 				startingSnapshot++
-
-				fmt.Println("on iteration", count)
 
 				currentTime = time.Now()
 				diff = currentTime.Sub(startTime)
 				snapshot = fmt.Sprintf(
 					"%s_%d_%d_ms", snapshotName, startingSnapshot, diff.Milliseconds(),
 				)
-
 				err, imgMD = writeImg(snapshot, imageQuality, c)
 				if err != nil {
 					return err
@@ -389,18 +388,14 @@ func htmlIteratorAction(
 					return err
 				}
 
-				err, currentNodeMap := nodeToMap(currentNodeSlice)
-
-				if err != nil {
-					return err
-				}
-
+				currentNodeMap := nodeToMap(currentNodeSlice)
 				nodeMap = mergeNodeMap(currentNodeMap, nodeMap)
 
 				if err != nil {
 					return err
 				}
 
+				// check whether the page has transitioned
 				if checkPageTransition(nodeMap, pByteCollection) {
 
 					hitCount = 0
@@ -414,15 +409,13 @@ func htmlIteratorAction(
 						c,
 						snapshot)
 
-					fmt.Println(compareImages((*fullPageImgSlice)[0].byteData, (*fullPageImgSlice)[1].byteData))
-
 					if err != nil {
 						return err
 					}
 
 				} else {
+					// if page has not transitioned exit if hits has been hit
 					hitCount++
-					fmt.Println("on hit: ", hitCount)
 					if hitCount == hitLimit {
 						return nil
 					}

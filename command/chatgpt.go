@@ -55,7 +55,7 @@ func getEngineMap() map[string]Engine {
 func getEngineOptionList() string {
 
 	engineString := ""
-	for k, _ := range getEngineMap() {
+	for k := range getEngineMap() {
 		engineString += k + ", "
 	}
 
