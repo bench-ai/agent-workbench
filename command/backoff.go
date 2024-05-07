@@ -17,6 +17,12 @@ type LLM interface {
 Executes an Api Request to the LLM, switches the LLM based on execution time and availability
 */
 
+type BackoffError struct{}
+
+func (b *BackoffError) Error() string {
+	return "all backoff attempts failed"
+}
+
 func ExponentialBackoff(
 	llmSlice []LLM,
 	chatRequest *[]MessageInterface,
@@ -28,10 +34,6 @@ func ExponentialBackoff(
 
 		for i := range tryLimit {
 			chatErr, chatCompletion := llm.Request(*chatRequest, requestWaitTime)
-
-			if chatCompletion != nil {
-				return chatCompletion, nil
-			}
 
 			if chatErr != nil {
 				switch chatErr.StatusCode {
@@ -49,8 +51,12 @@ func ExponentialBackoff(
 					return nil, errors.New(chatErr.Error.Message)
 				}
 			}
+
+			if chatCompletion != nil {
+				return chatCompletion, nil
+			}
 		}
 	}
 
-	return nil, errors.New("all attempts failed")
+	return nil, &BackoffError{}
 }

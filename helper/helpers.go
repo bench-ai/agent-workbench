@@ -48,7 +48,10 @@ func IsLte[T cmp.Ordered](lowVal, highVal T, checkEqual bool) bool {
 }
 
 func IsGte[T cmp.Ordered](lowVal, highVal T, checkEqual bool) bool {
-	return !IsLte[T](highVal, lowVal, checkEqual)
+	if checkEqual && lowVal == highVal {
+		return true
+	}
+	return highVal > lowVal
 }
 
 func IsBetween[T cmp.Ordered](lowRange, highRange, val T, lte, gte bool) bool {
