@@ -63,8 +63,6 @@ func ExponentialBackoff(
 		err  error
 	}
 
-	ch := make(chan request)
-
 	for _, llm := range llmSlice {
 		exp := 2.0 // initial sleep duration
 
@@ -73,6 +71,8 @@ func ExponentialBackoff(
 			ctxTimeout, cancel := context.WithTimeout(
 				context.Background(),
 				time.Millisecond*time.Duration(*requestWaitTime))
+
+			ch := make(chan request)
 
 			go func() {
 				chatErr, chatCompletion := llm.Request(*chatRequest, ctxTimeout)
@@ -86,6 +86,7 @@ func ExponentialBackoff(
 			case <-ctxTimeout.Done():
 				cancel()
 				log.Println("failed to complete request in allocated duration")
+				<-ch
 			case result := <-ch:
 				cancel()
 				if result.err == nil {
@@ -96,7 +97,7 @@ func ExponentialBackoff(
 
 				if errors.As(result.err, &llmError) {
 					if (llmError.Mode() == "rate-limit") && (i != (tryLimit - 1)) {
-						log.Println("rate limit hit sleeping...")
+						log.Println("rate limit hit, sleeping...")
 						time.Sleep(time.Second * time.Duration(math.Pow(2.0, exp)))
 						exp++
 					} else if llmError.Mode() == "standard" {

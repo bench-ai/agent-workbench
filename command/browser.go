@@ -22,7 +22,7 @@ type BrowserParams interface {
 type FullPageScreenShot struct {
 	Quality        uint8  `json:"quality"`
 	Name           string `json:"name"`
-	SnapShotFolder string `json:"snap_shot_name"`
+	SnapShotFolder string `json:"snapshot_name"`
 }
 
 func (f *FullPageScreenShot) Validate() error {
@@ -61,7 +61,7 @@ type ElementScreenshot struct {
 	Scale          float64 `json:"scale"`
 	Name           string  `json:"name"`
 	Selector       string  `json:"selector"`
-	SnapShotFolder string  `json:"snap_shot_name"`
+	SnapShotFolder string  `json:"snapshot_name"`
 }
 
 func (e *ElementScreenshot) Validate() error {
@@ -86,12 +86,12 @@ type CollectNodes struct {
 	GetStyles      bool   `json:"get_styles"`
 	Prepopulate    bool   `json:"prepopulate"`
 	Recurse        bool   `json:"recurse"`
-	SnapShotFolder string `json:"snap_shot_name"`
+	SnapShotFolder string `json:"snapshot_name"`
 }
 
 func (c *CollectNodes) Validate() error {
 	if strings.Contains(c.SnapShotFolder, ".") {
-		return errors.New("snap_shot_folder must be folder not a file")
+		return errors.New("snapshot_folder must be folder not a file")
 	}
 	return nil
 }
@@ -138,12 +138,12 @@ func (c *Click) AppendTask(b *browser.Executor) {
 }
 
 type SaveHtml struct {
-	SnapShotFolder string `json:"snap_shot_name"`
+	SnapShotFolder string `json:"snapshot_name"`
 }
 
 func (s *SaveHtml) Validate() error {
 	if strings.Contains(s.SnapShotFolder, ".") {
-		return errors.New("snap_shot_folder must be folder not a file")
+		return errors.New("snapshot_folder must be folder not a file")
 	}
 	return nil
 }
@@ -217,4 +217,19 @@ func (i *IterateHtml) AppendTask(b *browser.Executor) {
 		i.SaveFullPageImage,
 		i.SaveHtml,
 		i.SaveNode)
+}
+
+type AcquireLocation struct {
+	SnapShotFolder string `json:"snapshot_name"`
+}
+
+func (a *AcquireLocation) Validate() error {
+	if strings.Contains(a.SnapShotFolder, ".") {
+		return errors.New("snapshot_folder must be folder not a file")
+	}
+	return nil
+}
+
+func (a *AcquireLocation) AppendTask(b *browser.Executor) {
+	b.AcquireLocation(a.SnapShotFolder)
 }
