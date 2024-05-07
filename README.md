@@ -65,14 +65,14 @@ some preconfigured settings.
 ```json
 // Takes a screenshot of the page
 // quality: the higher the clearer the image (more comput is needed)
-// snap_shot_name: the subfolder name in the resources directory that will contain the saved data
+// snapshot_name: the subfolder name in the resources directory that will contain the saved data
 // name: name given to the file in the snapshot folder
 {
   "command_name": "full_page_screenshot",
   "params": {
     "quality":90,
     "name": "fullpage.png",
-    "snap_shot_name": "s1"
+    "snapshot_name": "s1"
   }
 }
 ```
@@ -80,7 +80,7 @@ some preconfigured settings.
 ```json
 // Takes a screenshot of a particular element
 // scale: how zoomed the image will be
-// snap_shot_name: the subfolder name in the resources directory
+// snapshot_name: the subfolder name in the resources directory
 // name: the subfolder name in the resources directory that will contain the saved data
 // selector: xpath to the element
 {
@@ -89,27 +89,30 @@ some preconfigured settings.
     "scale": 2,
     "name": "element.png",
     "selector": "(//img[@class='thumb-image loaded'])[5]",
-    "snap_shot_name": "s1"
+    "snapshot_name": "s1"
   }
 }
 ```
 ```json
 // Collects metadata on html elements
-// snap_shot_name: the subfolder name in the resources directory that will contain the saved data
+// snapshot_name: the subfolder name in the resources directory that will contain the saved data
 // selector: the element of which to extract nodes from
 {
   "command_name": "collect_nodes",
   "params": {
     "selector":"body",
     "wait_ready": false,
-    "snap_shot_name": "s1"
+    "snapshot_name": "s1",
+    "recurse": true,
+    "prepopulate": true,
+    "get_styles": true
   }
 }
 ```
 ```json
 // Clicks on a element
 // query_type: 
-  // search: xpath
+  // search: search by xpath
 // selector: the xpath of the element of which to click on
 {
   "command_name": "click",
@@ -121,11 +124,11 @@ some preconfigured settings.
 ```
 ```json
 // Saves HTML of webpage
-// snap_shot_name: the subfolder name in the resources directory that will contain the saved data
+// snapshot_name: the subfolder name in the resources directory that will contain the saved data
 {
   "command_name": "save_html", 
   "params": {
-    "snap_shot_name": "s1"
+    "snapshot_name": "s1"
   }
 }
 ```
@@ -139,6 +142,28 @@ some preconfigured settings.
   }
 }
 ```
+
+```json
+// collects snapshots of all versions of the html page over a fixed period of time
+// stops when the iteration is complete, or when the a repeat in the html is hit
+// iter_limit: the maximum iterations that a page scan will occur
+// pause_time: the time to sleep between iterations in milliseconds
+// snapshot_name: the name of the snapshot directories that will be generated
+// starting_snapshot: the snapshot folder number to start with: <snapshot_name>_<starting_snapshot>
+// save_html: whether to save a html page of the current snapshot
+// save_node: whether to save a html page of the current node data
+// save_full_page_image: whether to save a screenshot of the current html page 
+{
+  "iter_limit": 10,
+  "pause_time": 5000,
+  "starting_snapshot": 1,
+  "snapshot_name": "snapshot",
+  "save_html": true,
+  "save_node": true,
+  "save_full_page_image": true
+}
+```
+
 ### LLM 
 ...
 
@@ -164,7 +189,7 @@ some preconfigured settings.
           "params": {
             "quality":90,
             "name": "fullpage.png",
-            "snap_shot_name": "s1"
+            "snapshot_name": "s1"
           }
         },
         {
@@ -173,7 +198,7 @@ some preconfigured settings.
             "scale":2,
             "name": "element.png",
             "selector": "(//img[@class='thumb-image loaded'])[5]",
-            "snap_shot_name": "s1"
+            "snapshot_name": "s1"
           }
         },
         {
@@ -181,7 +206,7 @@ some preconfigured settings.
           "params": {
             "selector":"body",
             "wait_ready": false,
-            "snap_shot_name": "s1"
+            "snapshot_name": "s1"
           }
         },
         {
@@ -194,7 +219,7 @@ some preconfigured settings.
         {
           "command_name": "save_html",
           "params": {
-            "snap_shot_name": "s1"
+            "snapshot_name": "s1"
           }
         },
         {
