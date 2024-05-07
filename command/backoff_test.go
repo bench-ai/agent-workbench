@@ -1,13 +1,14 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 )
 
 type testRequest struct {
-	Mode int
+	Mode string
 }
 
 func (t *testRequest) Validate(messageSlice []MessageInterface) error {
@@ -15,28 +16,23 @@ func (t *testRequest) Validate(messageSlice []MessageInterface) error {
 	return nil
 }
 
-func (t *testRequest) Request(messages []MessageInterface, waitTime *int16) (*GptRequestError, *ChatCompletion) {
+func (t *testRequest) Request(messages []MessageInterface, ctx context.Context) (error, *ChatCompletion) {
 
 	_ = messages
-	_ = waitTime
+	_ = ctx
 
-	if t.Mode == 429 {
-		return &GptRequestError{
-			StatusCode: 429,
-		}, nil
-	} else if t.Mode == 1 {
-		time.Sleep(time.Second * 2)
-		return &GptRequestError{
-			StatusCode: 1,
-		}, nil
-	} else if t.Mode == 0 {
-		return &GptRequestError{
-			StatusCode: 0,
-			Error: GptError{
-				Message: "test error",
-			},
-		}, nil
-	} else {
+	rateErr := GetRateLimitError("exceeded rate")
+	stanErr := GetStandardError("generic error")
+
+	switch t.Mode {
+	case rateErr.Mode():
+		return &rateErr, nil
+	case stanErr.Mode():
+		return &stanErr, nil
+	case "wait":
+		time.Sleep(4 * time.Second)
+		return nil, &ChatCompletion{}
+	default:
 		return nil, &ChatCompletion{}
 	}
 }
@@ -53,7 +49,7 @@ func timestamp(m []MessageInterface, llms []LLM) (error, int64) {
 
 func TestExponentialBackoff(t *testing.T) {
 
-	tr := testRequest{429}
+	tr := testRequest{"rate-limit"}
 
 	message := GPTStandardMessage{
 		Role:    "user",
@@ -76,19 +72,15 @@ func TestExponentialBackoff(t *testing.T) {
 		t.Error("failed instead of sleeping for a 409 request")
 	}
 
-	tr.Mode = 1
+	tr.Mode = "wait"
 
-	err, ts = timestamp(messageSlice, llms)
-
-	if ts < 4000 {
-		t.Error("failed to sleep for a minimum of 4s after failing with status 1")
-	}
+	err, _ = timestamp(messageSlice, llms)
 
 	if !errors.Is(err, &BackoffError{}) {
-		t.Error("failed instead of sleeping for a 409 request")
+		t.Error("did not receive backoff error for timeout")
 	}
 
-	tr.Mode = 0
+	tr.Mode = "standard"
 
 	err, _ = timestamp(messageSlice, llms)
 
@@ -96,7 +88,7 @@ func TestExponentialBackoff(t *testing.T) {
 		t.Error("request did not fail on improper request")
 	}
 
-	tr.Mode = 108
+	tr.Mode = "pass"
 
 	err, _ = timestamp(messageSlice, llms)
 
