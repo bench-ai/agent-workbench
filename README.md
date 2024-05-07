@@ -148,7 +148,7 @@ operation.
 ```
 
 ```json
-// collects snapshots of all versions of the html page over a fixed period of time
+// Collects snapshots of all versions of the html page over a fixed period of time
 // stops when the iteration is complete, or when the a repeat in the html is hit
 // iter_limit: the maximum iterations that a page scan will occur
 // pause_time: the time to sleep between iterations in milliseconds
@@ -158,13 +158,16 @@ operation.
 // save_node: whether to save a html page of the current node data
 // save_full_page_image: whether to save a screenshot of the current html page 
 {
-  "iter_limit": 10,
-  "pause_time": 5000,
-  "starting_snapshot": 1,
-  "snapshot_name": "snapshot",
-  "save_html": true,
-  "save_node": true,
-  "save_full_page_image": true
+  "command_name": "iterate_html",
+  "params": {
+    "iter_limit": 10,
+    "pause_time": 5000,
+    "starting_snapshot": 1,
+    "snapshot_name": "snapshot",
+    "save_html": true,
+    "save_node": true,
+    "save_full_page_image": true
+  }
 }
 ```
 
