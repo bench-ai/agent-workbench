@@ -10,8 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
-	"time"
 )
 
 type MessageInterface interface {
@@ -261,7 +259,7 @@ type GptError struct {
 	Code    string `json:"code"`
 }
 
-type GptRequestError struct {
+type gptRequestError struct {
 	StatusCode int      `json:"statusCode"`
 	Error      GptError `json:"error"`
 }
@@ -442,33 +440,18 @@ TODO
 Add method to estimate context window For multimodal and regular requests
 */
 
-func (c *ChatGPT) Request(messages []MessageInterface, waitTime *int16) (*GptRequestError, *ChatCompletion) {
+func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (error, *ChatCompletion) {
 	lastMessage := messages[len(messages)-1]
-
-	var resp GptRequestError
-
-	background := context.Background()
-	var ctx context.Context
-	var cf context.CancelFunc
-
-	if waitTime != nil {
-		ctx, cf = context.WithTimeout(background, time.Second*time.Duration(*waitTime))
-	} else {
-		ctx, cf = context.WithCancel(background)
-	}
-
-	defer cf()
+	var resp gptRequestError
 
 	if lastMessage.GetRole() != "user" {
-		resp.Error.Message = "last MessageInterface is not a user MessageInterface"
-		resp.StatusCode = 0
-		return &resp, nil
+		err := GetStandardError("last message is not a user message")
+		return &err, nil
 	}
 
 	if err := c.Validate(messages); err != nil {
-		resp.Error.Message = err.Error()
-		resp.StatusCode = 0
-		return &resp, nil
+		standardErr := GetStandardError(err.Error())
+		return &standardErr, nil
 	}
 
 	url := "https://api.openai.com/v1/chat/completions"
@@ -481,9 +464,8 @@ func (c *ChatGPT) Request(messages []MessageInterface, waitTime *int16) (*GptReq
 	jsonBytes, err := json.Marshal(c)
 
 	if err != nil {
-		resp.Error.Message = err.Error()
-		resp.StatusCode = 0
-		return &resp, nil
+		standardErr := GetStandardError(err.Error())
+		return &standardErr, nil
 	}
 
 	var client http.Client
@@ -492,9 +474,8 @@ func (c *ChatGPT) Request(messages []MessageInterface, waitTime *int16) (*GptReq
 	pRequest, err := http.NewRequestWithContext(ctx, "POST", url, reader)
 
 	if err != nil {
-		resp.Error.Message = err.Error()
-		resp.StatusCode = 0
-		return &resp, nil
+		standardErr := GetStandardError(err.Error())
+		return &standardErr, nil
 	}
 
 	pRequest.Header.Set("Content-Type", "application/json")
@@ -503,12 +484,8 @@ func (c *ChatGPT) Request(messages []MessageInterface, waitTime *int16) (*GptReq
 	pResponse, err := client.Do(pRequest)
 
 	if err != nil {
-		resp.StatusCode = 0
-		if strings.Contains(err.Error(), "context deadline exceeded") {
-			resp.StatusCode = 1
-		}
-		resp.Error.Message = err.Error()
-		return &resp, nil
+		standardErr := GetStandardError(err.Error())
+		return &standardErr, nil
 	}
 
 	defer func() {
@@ -521,33 +498,32 @@ func (c *ChatGPT) Request(messages []MessageInterface, waitTime *int16) (*GptReq
 	responseBytes, err := io.ReadAll(pResponse.Body)
 
 	if err != nil {
-		resp.Error.Message = err.Error()
-		resp.StatusCode = 0
-		return &resp, nil
+		standardErr := GetStandardError(err.Error())
+		return &standardErr, nil
 	}
 
 	if pResponse.StatusCode == 200 {
-
 		var gptResp ChatCompletion
 
 		if err = json.Unmarshal(responseBytes, &gptResp); err != nil {
-			resp.Error.Message = err.Error()
-			resp.StatusCode = 0
-			return &resp, nil
+			standardErr := GetStandardError(err.Error())
+			return &standardErr, nil
 		}
 
 		return nil, &gptResp
 	} else {
-		resp.StatusCode = pResponse.StatusCode
-
 		if err = json.Unmarshal(responseBytes, &resp); err != nil {
-			resp.StatusCode = 0
-			resp.Error.Message = err.Error()
-			return &resp, nil
+			standardErr := GetStandardError(err.Error())
+			return &standardErr, nil
 		}
 
-		return &resp, nil
+		if pResponse.StatusCode == 429 {
+			rateLimitErr := GetRateLimitError(resp.Error.Message)
+			return &rateLimitErr, nil
+		}
 
+		standardErr := GetStandardError(resp.Error.Message)
+		return &standardErr, nil
 	}
 }
 

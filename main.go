@@ -292,6 +292,8 @@ func addOperation(com Command, builder *browser.Executor) {
 		browserParams = &command.Sleep{}
 	case "iterate_html":
 		browserParams = &command.IterateHtml{}
+	case "acquire_location":
+		browserParams = &command.AcquireLocation{}
 	default:
 		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
 	}

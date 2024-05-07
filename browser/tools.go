@@ -32,13 +32,14 @@ type imageMetaData struct {
 }
 
 type Executor struct {
-	Url       string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	tasks     chromedp.Tasks
-	imageList []*imageMetaData
-	htmlMap   map[string]*string
-	nodeMap   map[string]*[]*nodeWithStyles
+	Url         string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	tasks       chromedp.Tasks
+	imageList   []*imageMetaData
+	htmlMap     map[string]*string
+	locationMap map[string][]*string
+	nodeMap     map[string]*[]*nodeWithStyles
 }
 
 func (b *Executor) Init(headless bool, timeout *int16) *Executor {
@@ -70,6 +71,7 @@ func (b *Executor) Init(headless bool, timeout *int16) *Executor {
 	b.htmlMap = make(map[string]*string)
 	b.nodeMap = make(map[string]*[]*nodeWithStyles)
 	b.imageList = make([]*imageMetaData, 0, 10)
+	b.locationMap = make(map[string][]*string)
 
 	return b
 }
@@ -303,6 +305,20 @@ func (b *Executor) HtmlIterator(
 	)
 }
 
+func (b *Executor) AcquireLocation(snapshot string) {
+	var loc string
+
+	b.appendTask(chromedp.ActionFunc(func(c context.Context) error {
+		err := chromedp.Location(&loc).Do(c)
+		if err != nil {
+			return err
+		}
+		return err
+	}))
+
+	b.locationMap[snapshot] = append(b.locationMap[snapshot], &loc)
+}
+
 func (b *Executor) Execute() {
 	defer b.cancel()
 	if err := chromedp.Run(b.ctx, b.tasks); err != nil {
@@ -348,7 +364,22 @@ func (b *Executor) Execute() {
 		}
 	}
 
-	b.imageList = []*imageMetaData{}
-	b.htmlMap = map[string]*string{}
-	b.nodeMap = map[string]*[]*nodeWithStyles{}
+	for snapShotName, location := range b.locationMap {
+		folderPath := createSnapshotFolder(snapShotName)
+		path := filepath.Join(folderPath, "locationData.json")
+		byteSlice, err := json.MarshalIndent(location, "", "    ")
+
+		if err != nil {
+			log.Fatalf("Unable to marshal node meta data: %v", err)
+		}
+
+		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
+			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
+		}
+	}
+
+	b.htmlMap = make(map[string]*string)
+	b.nodeMap = make(map[string]*[]*nodeWithStyles)
+	b.imageList = make([]*imageMetaData, 0, 10)
+	b.locationMap = make(map[string][]*string)
 }
