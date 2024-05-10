@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 type Credentials struct {
@@ -165,8 +166,7 @@ type runner interface {
 }
 
 type runCommand struct {
-	fs                 *flag.FlagSet
-	configIsJsonString bool
+	fs *flag.FlagSet
 }
 
 func (r *runCommand) init(args []string) error {
@@ -175,6 +175,122 @@ func (r *runCommand) init(args []string) error {
 
 func (r *runCommand) getName() string {
 	return r.fs.Name()
+}
+
+type sessionCommand struct {
+	fs *flag.FlagSet
+	rf bool
+}
+
+func (s *sessionCommand) init(args []string) error {
+	return s.fs.Parse(args)
+}
+
+func (s *sessionCommand) getName() string {
+	return s.fs.Name()
+}
+
+func (s *sessionCommand) run() {
+
+	if s.fs.Arg(0) == "ls" && s.rf {
+		log.Fatal("cannot use the list flag and the rf flag together. They are unrelated")
+	}
+
+	if s.fs.Arg(0) == "ls" && s.fs.NArg() > 1 {
+		log.Fatalf("no arguments can follow past the list flag")
+	}
+
+	pth, exists := os.LookupEnv("BENCHAI-SAVEDIR")
+
+	if !exists {
+		currentUser, err := user.Current()
+
+		if err != nil {
+			log.Fatalf("failed to find current os user")
+		}
+
+		pth = path.Join(currentUser.HomeDir, "/.cache/benchai/agent/")
+	}
+
+	pth = filepath.Join(pth, "sessions")
+
+	if s.fs.Arg(0) == "ls" {
+
+		if _, err := os.Stat(pth); err == nil {
+			dirEntry, err := os.ReadDir(pth)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			dirList := "["
+			for _, f := range dirEntry {
+				if f.IsDir() {
+					dirList += f.Name() + ", "
+				}
+			}
+
+			dirList = strings.TrimSuffix(dirList, ", ")
+
+			dirList += "]"
+			fmt.Println(dirList)
+			return
+		} else if os.IsNotExist(err) {
+			fmt.Println("[]")
+			return
+		} else {
+			log.Fatalf("error finding directory %s", pth)
+		}
+	}
+
+	if s.fs.Arg(0) == "rm" {
+
+		if s.fs.Arg(1) == "" && !s.rf {
+			log.Fatal("no session was specified to delete")
+		} else if s.fs.Arg(1) != "" && s.rf {
+			log.Fatalf("rf can not be followed by any sessions")
+		} else if !s.rf {
+			sessionPath := filepath.Join(pth, s.fs.Arg(1))
+			if _, err := os.Stat(sessionPath); err == nil {
+				err = os.RemoveAll(sessionPath)
+
+				if err != nil {
+					log.Fatalf("unable to delete dir %s", s.fs.Arg(1))
+				}
+			} else if os.IsNotExist(err) {
+				log.Fatalf("session %s can not be removed as it does not exist", s.fs.Arg(1))
+			} else {
+				log.Fatalf("unable to locate session %s", s.fs.Arg(1))
+			}
+		} else {
+			dirEntry, err := os.ReadDir(pth)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			for _, entry := range dirEntry {
+				err = os.RemoveAll(filepath.Join(pth, entry.Name()))
+				if err != nil {
+					log.Fatalf("failed to remove session, %s", entry.Name())
+				}
+			}
+		}
+	}
+}
+
+func newSessionCommand() *sessionCommand {
+	rc := sessionCommand{
+		fs: flag.NewFlagSet("session", flag.ExitOnError),
+	}
+
+	rc.fs.BoolVar(
+		&rc.rf,
+		"rf",
+		false,
+		"removes all sessions")
+
+	return &rc
 }
 
 // run
@@ -259,12 +375,6 @@ func newRunCommand() *runCommand {
 	rc := runCommand{
 		fs: flag.NewFlagSet("run", flag.ExitOnError),
 	}
-
-	rc.fs.BoolVar(
-		&rc.configIsJsonString,
-		"j",
-		false,
-		"whether or not the string being provided is a json string")
 
 	return &rc
 }
@@ -388,6 +498,7 @@ func root(args []string) error {
 	cmds := []runner{
 		newRunCommand(),
 		newVersionCommand(),
+		newSessionCommand(),
 	}
 
 	subcommand := os.Args[1]
