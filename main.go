@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
+	"path"
 	"path/filepath"
+	"strings"
 )
 
 type Credentials struct {
@@ -43,9 +46,9 @@ type Operation struct {
 	CommandList []Command `json:"command_list"`
 }
 
-func runBrowserCommands(settings Settings, commandList []Command) {
+func runBrowserCommands(settings Settings, commandList []Command, sessionPath string) {
 	var browserBuilder browser.Executor
-	browserBuilder.Init(settings.Headless, settings.Timeout)
+	browserBuilder.Init(settings.Headless, settings.Timeout, sessionPath)
 
 	for _, com := range commandList {
 		addOperation(com, &browserBuilder)
@@ -67,7 +70,7 @@ func collectSettings(llmSettings map[string]interface{}, key string, required bo
 }
 
 // create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
-func runLlmCommands(settings Settings, commandList []Command) {
+func runLlmCommands(settings Settings, commandList []Command, sessionPath string) {
 
 	var llmArray []command.LLM
 
@@ -138,17 +141,13 @@ func runLlmCommands(settings Settings, commandList []Command) {
 		MessageList:   commandList,
 	}
 
-	if er := os.MkdirAll("./resources", os.ModePerm); !os.IsExist(er) && er != nil {
-		log.Fatal("Could not create directory: " + "./resources")
-	}
-
 	b, err := json.MarshalIndent(writeData, "", "    ")
 
 	if err != nil {
 		log.Fatal("Could not marshall llm response")
 	}
 
-	err = os.WriteFile(filepath.Join("./resources", "completion.json"), b, 0666)
+	err = os.WriteFile(filepath.Join(sessionPath, "completion.json"), b, 0666)
 
 	if err != nil {
 		log.Fatal("Could not write llm response")
@@ -157,6 +156,7 @@ func runLlmCommands(settings Settings, commandList []Command) {
 
 type Configuration struct {
 	Operations []Operation `json:"operations"`
+	SessionId  string      `json:"session_id"`
 }
 
 type runner interface {
@@ -166,8 +166,7 @@ type runner interface {
 }
 
 type runCommand struct {
-	fs                 *flag.FlagSet
-	configIsJsonString bool
+	fs *flag.FlagSet
 }
 
 func (r *runCommand) init(args []string) error {
@@ -178,16 +177,128 @@ func (r *runCommand) getName() string {
 	return r.fs.Name()
 }
 
+type sessionCommand struct {
+	fs *flag.FlagSet
+	rf bool
+}
+
+func (s *sessionCommand) init(args []string) error {
+	return s.fs.Parse(args)
+}
+
+func (s *sessionCommand) getName() string {
+	return s.fs.Name()
+}
+
+func (s *sessionCommand) run() {
+
+	if s.fs.Arg(0) == "ls" && s.rf {
+		log.Fatal("cannot use the list flag and the rf flag together. They are unrelated")
+	}
+
+	if s.fs.Arg(0) == "ls" && s.fs.NArg() > 1 {
+		log.Fatalf("no arguments can follow past the list flag")
+	}
+
+	pth, exists := os.LookupEnv("BENCHAI-SAVEDIR")
+
+	if !exists {
+		currentUser, err := user.Current()
+
+		if err != nil {
+			log.Fatalf("failed to find current os user")
+		}
+
+		pth = path.Join(currentUser.HomeDir, "/.cache/benchai/agent/")
+	}
+
+	pth = filepath.Join(pth, "sessions")
+
+	if s.fs.Arg(0) == "ls" {
+
+		if _, err := os.Stat(pth); err == nil {
+			dirEntry, err := os.ReadDir(pth)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			dirList := "["
+			for _, f := range dirEntry {
+				if f.IsDir() {
+					dirList += f.Name() + ", "
+				}
+			}
+
+			dirList = strings.TrimSuffix(dirList, ", ")
+
+			dirList += "]"
+			fmt.Println(dirList)
+			return
+		} else if os.IsNotExist(err) {
+			fmt.Println("[]")
+			return
+		} else {
+			log.Fatalf("error finding directory %s", pth)
+		}
+	}
+
+	if s.fs.Arg(0) == "rm" {
+
+		if s.fs.Arg(1) == "" && !s.rf {
+			log.Fatal("no session was specified to delete")
+		} else if s.fs.Arg(1) != "" && s.rf {
+			log.Fatalf("rf can not be followed by any sessions")
+		} else if !s.rf {
+			sessionPath := filepath.Join(pth, s.fs.Arg(1))
+			if _, err := os.Stat(sessionPath); err == nil {
+				err = os.RemoveAll(sessionPath)
+
+				if err != nil {
+					log.Fatalf("unable to delete dir %s", s.fs.Arg(1))
+				}
+			} else if os.IsNotExist(err) {
+				log.Fatalf("session %s can not be removed as it does not exist", s.fs.Arg(1))
+			} else {
+				log.Fatalf("unable to locate session %s", s.fs.Arg(1))
+			}
+		} else {
+			dirEntry, err := os.ReadDir(pth)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			for _, entry := range dirEntry {
+				err = os.RemoveAll(filepath.Join(pth, entry.Name()))
+				if err != nil {
+					log.Fatalf("failed to remove session, %s", entry.Name())
+				}
+			}
+		}
+	}
+}
+
+func newSessionCommand() *sessionCommand {
+	rc := sessionCommand{
+		fs: flag.NewFlagSet("session", flag.ExitOnError),
+	}
+
+	rc.fs.BoolVar(
+		&rc.rf,
+		"rf",
+		false,
+		"removes all sessions")
+
+	return &rc
+}
+
 // run
 /**
 The run command, checks if the user wishes to run their browser in headless mode, and whether they are pointing to
 a file or passing raw json
 */
 func (r *runCommand) run() {
-
-	if err := os.RemoveAll("./resources"); err != nil {
-		log.Fatal("cannot create resources directory due to: ", err)
-	}
 
 	configString := r.fs.Arg(0)
 
@@ -198,11 +309,7 @@ func (r *runCommand) run() {
 	var bytes []byte
 	var err error
 
-	if r.configIsJsonString {
-		bytes = []byte(configString)
-	} else {
-		bytes, err = os.ReadFile(configString)
-	}
+	bytes, err = os.ReadFile(configString)
 
 	if err != nil {
 		log.Fatalf("failed to read json file due to: %v", err)
@@ -216,12 +323,48 @@ func (r *runCommand) run() {
 		log.Fatalf("failed to decode json file: %v", err)
 	}
 
+	pth, exists := os.LookupEnv("BENCHAI-SAVEDIR")
+
+	if exists {
+		if _, err = os.Stat(pth); err != nil && os.IsNotExist(err) {
+			log.Fatalf("directory %s does not exist", pth)
+		} else if err != nil {
+			log.Fatalf("cannot use directory %s as the save location basepath", pth)
+		}
+	} else {
+		currentUser, err := user.Current()
+
+		if err != nil {
+			log.Fatal("was unable to extract the current os user")
+		}
+
+		pth = path.Join(currentUser.HomeDir, "/.cache/benchai/agent/")
+	}
+
+	pth = path.Join(pth, "sessions")
+
+	if err = os.MkdirAll(pth, 0777); err != nil && !os.IsExist(err) {
+		log.Fatalf("session directory at %s does not exist and cannot be created", pth)
+	}
+
+	pth = path.Join(pth, config.SessionId)
+
+	if err = os.Mkdir(pth, 0777); err != nil && os.IsExist(err) {
+		log.Fatalf("session: %s, already exists", pth)
+	} else if err != nil {
+		log.Fatalf("cannot use directory %s as the session save location", pth)
+	}
+
+	if err = os.WriteFile(filepath.Join(pth, "config.json"), bytes, 0777); err != nil {
+		log.Fatal("was unable to write config to session file")
+	}
+
 	for _, op := range config.Operations {
 		switch op.Type {
 		case "browser":
-			runBrowserCommands(op.Settings, op.CommandList)
+			runBrowserCommands(op.Settings, op.CommandList, pth)
 		case "llm":
-			runLlmCommands(op.Settings, op.CommandList)
+			runLlmCommands(op.Settings, op.CommandList, pth)
 		default:
 			log.Fatalf("unknown operation type: %s", op.Type)
 		}
@@ -232,12 +375,6 @@ func newRunCommand() *runCommand {
 	rc := runCommand{
 		fs: flag.NewFlagSet("run", flag.ExitOnError),
 	}
-
-	rc.fs.BoolVar(
-		&rc.configIsJsonString,
-		"j",
-		false,
-		"whether or not the string being provided is a json string")
 
 	return &rc
 }
@@ -361,6 +498,7 @@ func root(args []string) error {
 	cmds := []runner{
 		newRunCommand(),
 		newVersionCommand(),
+		newSessionCommand(),
 	}
 
 	subcommand := os.Args[1]

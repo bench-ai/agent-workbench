@@ -33,6 +33,7 @@ type imageMetaData struct {
 
 type Executor struct {
 	Url         string
+	savePath    string
 	ctx         context.Context
 	cancel      context.CancelFunc
 	tasks       chromedp.Tasks
@@ -42,7 +43,11 @@ type Executor struct {
 	nodeMap     map[string]*[]*nodeWithStyles
 }
 
-func (b *Executor) Init(headless bool, timeout *int16) *Executor {
+func (b *Executor) Init(headless bool, timeout *int16, sessionPath string) *Executor {
+
+	b.savePath = sessionPath
+
+	log.Printf("writing session data too folder: %s \n", b.savePath)
 
 	if headless {
 		b.ctx, b.cancel = chromedp.NewContext(
@@ -181,10 +186,10 @@ func parseThroughNodes(nodeSlice []*nodeWithStyles) []nodeMetaData {
 /*
 Creates Snapshot folder if it does not exist already
 */
-func createSnapshotFolder(snapshot string) string {
-	folderPath := filepath.Join("./resources", "snapshots", snapshot)
+func (b *Executor) createSnapshotFolder(snapshot string) string {
+	folderPath := filepath.Join(b.savePath, "snapshots", snapshot)
 	imagePath := filepath.Join(folderPath, "images")
-	if err := os.MkdirAll(imagePath, os.ModePerm); !os.IsExist(err) && err != nil {
+	if err := os.MkdirAll(imagePath, 0777); !os.IsExist(err) && err != nil {
 		log.Fatal("Could not create directory: " + folderPath)
 	}
 
@@ -295,7 +300,7 @@ func (b *Executor) HtmlIterator(
 
 	pNodeMap := b.nodeMap
 	if !saveNodes {
-		pHtmlMap = nil
+		pNodeMap = nil
 	}
 
 	b.appendTask(
@@ -327,29 +332,29 @@ func (b *Executor) Execute() {
 
 	for _, imd := range b.imageList {
 
-		folderPath := createSnapshotFolder(imd.snapShotName)
-		path := filepath.Join(folderPath, "images", imd.imageName)
-		if err := os.WriteFile(path, *imd.byteData, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
+		folderPath := b.createSnapshotFolder(imd.snapShotName)
+		pth := filepath.Join(folderPath, "images", imd.imageName)
+		if err := os.WriteFile(pth, *imd.byteData, 0666); err != nil {
+			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
 		}
 	}
 
 	for snapShotName, html := range b.htmlMap {
 
-		folderPath := createSnapshotFolder(snapShotName)
+		folderPath := b.createSnapshotFolder(snapShotName)
 
-		path := filepath.Join(folderPath, "body.txt")
+		pth := filepath.Join(folderPath, "body.txt")
 
 		byteSlice := []byte(*html)
-		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
+		if err := os.WriteFile(pth, byteSlice, 0666); err != nil {
+			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
 		}
 	}
 
 	for snapShotName, node := range b.nodeMap {
-		folderPath := createSnapshotFolder(snapShotName)
+		folderPath := b.createSnapshotFolder(snapShotName)
 
-		path := filepath.Join(folderPath, "nodeData.json")
+		pth := filepath.Join(folderPath, "nodeData.json")
 
 		metaDataSlice := parseThroughNodes(*node)
 
@@ -359,22 +364,22 @@ func (b *Executor) Execute() {
 			log.Fatalf("Unable to marshal node meta data: %v", err)
 		}
 
-		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
+		if err := os.WriteFile(pth, byteSlice, 0666); err != nil {
+			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
 		}
 	}
 
 	for snapShotName, location := range b.locationMap {
-		folderPath := createSnapshotFolder(snapShotName)
-		path := filepath.Join(folderPath, "locationData.json")
+		folderPath := b.createSnapshotFolder(snapShotName)
+		pth := filepath.Join(folderPath, "locationData.json")
 		byteSlice, err := json.MarshalIndent(location, "", "    ")
 
 		if err != nil {
 			log.Fatalf("Unable to marshal node meta data: %v", err)
 		}
 
-		if err := os.WriteFile(path, byteSlice, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", path, err)
+		if err := os.WriteFile(pth, byteSlice, 0666); err != nil {
+			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
 		}
 	}
 

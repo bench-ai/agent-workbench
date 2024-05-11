@@ -35,6 +35,17 @@ agent version
 The heart of the agent is the configuration file. Here you will dictate the commands for it to invoke along with
 some preconfigured settings.
 
+### Session
+To communicate with the agent a unique session id must be provided. The ID allows the agent to distinguish between
+sessions, allowing future access after the session lifetime and concurrent access.
+
+To set the session add this line to the config file
+```json
+{
+  "session_id": "test_session1"
+}
+```
+
 ### Browser
 The Browser commands give your agent access to a Browser. You can do things such as scrape the html and 
 node data, click on elements, and take screenshots. You can then chain commands together forming an
@@ -337,6 +348,7 @@ These are the type of messages you can send to the llm
   "operations": [
     {
       "type": "browser",
+      "session_id": "my_session",
       "settings" : {
         "timeout": 5,
         "headless": false
@@ -432,6 +444,19 @@ To run the agent simply use the run command and point it to your json file
 agent run ./path/to/my/config.json
 ```
 
+### List Sessions
+```shell
+agent session ls
+```
 
+### Remove Session
+```shell
+agent session rm <my-session-id>
+```
+
+### Remove all Sessions
+```shell
+agent session -rf rm
+```
 
 
