@@ -1,7 +1,7 @@
-package command
+package browser
 
 import (
-	"agent/browser"
+	"agent/chrome"
 	"errors"
 	"fmt"
 	"github.com/chromedp/chromedp"
@@ -30,8 +30,8 @@ func (f *FullPageScreenShot) Validate() error {
 		return errors.New("quality must be greater than zero")
 	}
 
-	if !strings.HasSuffix(f.Name, ".png") {
-		return errors.New("name must end with .png")
+	if !strings.HasSuffix(f.Name, ".jpg") {
+		return errors.New("name must end with .jpg")
 	}
 
 	return nil
@@ -65,8 +65,8 @@ type ElementScreenshot struct {
 }
 
 func (e *ElementScreenshot) Validate() error {
-	if !strings.HasSuffix(e.Name, ".png") {
-		return errors.New("name must end with .png")
+	if !strings.HasSuffix(e.Name, ".jpg") {
+		return errors.New("name must end with .jpg")
 	}
 
 	if e.Scale < 0 {

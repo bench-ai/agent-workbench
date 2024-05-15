@@ -1,4 +1,4 @@
-package command
+package llm
 
 import (
 	"context"
@@ -9,52 +9,52 @@ import (
 	"time"
 )
 
-// LLM interface that implements request function
-type LLM interface {
-	Validate(messageSlice []MessageInterface) error
-	Request(messages []MessageInterface, ctx context.Context) (error, *ChatCompletion)
+// model interface that implements request function
+type model interface {
+	Validate(messageSlice []messageInterface) error
+	Request(messages []messageInterface, ctx context.Context) (error, *ChatCompletion)
 }
 
-type LLMError struct {
+type modelError struct {
 	mode    string
 	Message string
 }
 
-func (l *LLMError) Error() string {
+func (l *modelError) Error() string {
 	return fmt.Sprintf("%s: %s. \n", l.mode, l.Message)
 }
 
-func (l *LLMError) Mode() string {
+func (l *modelError) Mode() string {
 	return l.mode
 }
 
-func GetRateLimitError(message string) LLMError {
-	return LLMError{
+func getRateLimitError(message string) modelError {
+	return modelError{
 		mode:    "rate-limit",
 		Message: message,
 	}
 }
 
-func GetStandardError(message string) LLMError {
-	return LLMError{
+func getStandardError(message string) modelError {
+	return modelError{
 		mode:    "standard",
 		Message: message,
 	}
 }
 
-type BackoffError struct{}
+type backoffError struct{}
 
-func (b *BackoffError) Error() string {
+func (b *backoffError) Error() string {
 	return "all backoff attempts failed"
 }
 
-// ExponentialBackoff
+// exponentialBackoff
 /*
-Executes an Api Request to the LLM, switches the LLM based on execution time and availability
+Executes an Api Request to the model, switches the model based on execution time and availability
 */
-func ExponentialBackoff(
-	llmSlice []LLM,
-	chatRequest *[]MessageInterface,
+func exponentialBackoff(
+	llmSlice []model,
+	chatRequest *[]messageInterface,
 	tryLimit int16,
 	requestWaitTime *int16) (*ChatCompletion, error) {
 
@@ -93,7 +93,7 @@ func ExponentialBackoff(
 					return result.comp, nil
 				}
 
-				var llmError *LLMError
+				var llmError *modelError
 
 				if errors.As(result.err, &llmError) {
 					if (llmError.Mode() == "rate-limit") && (i != (tryLimit - 1)) {
@@ -104,11 +104,11 @@ func ExponentialBackoff(
 						return nil, errors.New(llmError.Message)
 					}
 				} else {
-					return nil, errors.New("llm does not return LLMError")
+					return nil, errors.New("llm does not return modelError")
 				}
 			}
 		}
 	}
 
-	return nil, &BackoffError{}
+	return nil, &backoffError{}
 }

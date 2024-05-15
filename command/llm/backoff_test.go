@@ -1,4 +1,4 @@
-package command
+package llm
 
 import (
 	"context"
@@ -11,18 +11,18 @@ type testRequest struct {
 	Mode string
 }
 
-func (t *testRequest) Validate(messageSlice []MessageInterface) error {
+func (t *testRequest) Validate(messageSlice []messageInterface) error {
 	_ = messageSlice
 	return nil
 }
 
-func (t *testRequest) Request(messages []MessageInterface, ctx context.Context) (error, *ChatCompletion) {
+func (t *testRequest) Request(messages []messageInterface, ctx context.Context) (error, *ChatCompletion) {
 
 	_ = messages
 	_ = ctx
 
-	rateErr := GetRateLimitError("exceeded rate")
-	stanErr := GetStandardError("generic error")
+	rateErr := getRateLimitError("exceeded rate")
+	stanErr := getStandardError("generic error")
 
 	switch t.Mode {
 	case rateErr.Mode():
@@ -37,11 +37,11 @@ func (t *testRequest) Request(messages []MessageInterface, ctx context.Context) 
 	}
 }
 
-func timestamp(m []MessageInterface, llms []LLM) (error, int64) {
+func timestamp(m []messageInterface, llms []model) (error, int64) {
 
 	wt := int16(1)
 	start := time.Now()
-	_, err := ExponentialBackoff(llms, &m, 2, &wt)
+	_, err := exponentialBackoff(llms, &m, 2, &wt)
 	end := time.Now()
 
 	return err, end.Sub(start).Milliseconds()
@@ -51,16 +51,16 @@ func TestExponentialBackoff(t *testing.T) {
 
 	tr := testRequest{"rate-limit"}
 
-	message := GPTStandardMessage{
+	message := gptStandardMessage{
 		Role:    "user",
 		Content: "test",
 	}
 
-	messageSlice := []MessageInterface{
+	messageSlice := []messageInterface{
 		&message,
 	}
 
-	llms := []LLM{&tr}
+	llms := []model{&tr}
 
 	err, ts := timestamp(messageSlice, llms)
 
@@ -68,7 +68,7 @@ func TestExponentialBackoff(t *testing.T) {
 		t.Error("failed to sleep for a minimum of 4s after hitting 409")
 	}
 
-	if !errors.Is(err, &BackoffError{}) {
+	if !errors.Is(err, &backoffError{}) {
 		t.Error("failed instead of sleeping for a 409 request")
 	}
 
@@ -76,7 +76,7 @@ func TestExponentialBackoff(t *testing.T) {
 
 	err, _ = timestamp(messageSlice, llms)
 
-	if !errors.Is(err, &BackoffError{}) {
+	if !errors.Is(err, &backoffError{}) {
 		t.Error("did not receive backoff error for timeout")
 	}
 

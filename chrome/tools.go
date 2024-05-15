@@ -47,8 +47,6 @@ func (b *Executor) Init(headless bool, timeout *int16, sessionPath string) *Exec
 
 	b.savePath = sessionPath
 
-	log.Printf("writing session data too folder: %s \n", b.savePath)
-
 	if headless {
 		b.ctx, b.cancel = chromedp.NewContext(
 			context.Background(),
@@ -63,9 +61,6 @@ func (b *Executor) Init(headless bool, timeout *int16, sessionPath string) *Exec
 
 		b.ctx, b.cancel = chromedp.NewContext(
 			actx,
-			//chromedp.WithLogf(log.Printf),
-			//chromedp.WithDebugf(log.Printf),
-			//chromedp.WithErrorf(log.Printf))
 		)
 	}
 
@@ -116,7 +111,7 @@ func (b *Executor) ElementScreenshot(scale float64, selector string, name, snaps
 
 // Click
 /*
-Instructs the browser agent to click on a section of the webpage
+Instructs the chrome agent to click on a section of the webpage
 */
 func (b *Executor) Click(selector string, queryFunc func(s *chromedp.Selector)) {
 	b.appendTask(chromedp.Click(selector, queryFunc))
@@ -124,7 +119,7 @@ func (b *Executor) Click(selector string, queryFunc func(s *chromedp.Selector)) 
 
 // SleepForSeconds
 /*
-Lets the browser pause operations for a certain amount of time
+Lets the chrome pause operations for a certain amount of time
 */
 func (b *Executor) SleepForSeconds(seconds uint16) {
 	b.appendTask(
@@ -327,7 +322,7 @@ func (b *Executor) AcquireLocation(snapshot string) {
 func (b *Executor) Execute() {
 	defer b.cancel()
 	if err := chromedp.Run(b.ctx, b.tasks); err != nil {
-		log.Fatalf("Unable to run browser tasks due to: %v", err)
+		log.Fatalf("Unable to run chrome tasks due to: %v", err)
 	}
 
 	for _, imd := range b.imageList {

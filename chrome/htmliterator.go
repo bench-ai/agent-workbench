@@ -240,7 +240,7 @@ func writeImg(
 
 	imgMetaData := imageMetaData{
 		snapShotName: snapshot,
-		imageName:    "page_image.png",
+		imageName:    "page_image.jpg",
 		byteData:     &byteSlice,
 	}
 

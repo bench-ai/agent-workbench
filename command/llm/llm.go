@@ -1,4 +1,4 @@
-package command
+package llm
 
 import (
 	"agent/helper"
@@ -12,7 +12,7 @@ import (
 	"net/http"
 )
 
-type MessageInterface interface {
+type messageInterface interface {
 	ValidateRole() bool
 	GetType() string
 	GetRole() string
@@ -23,7 +23,7 @@ func containsRole(roleSlice []string, role string) bool {
 	return contains(roleSlice, role)
 }
 
-type Engine struct {
+type engine struct {
 	ContextWindow   uint32
 	HasJsonMode     bool
 	Name            string
@@ -31,16 +31,16 @@ type Engine struct {
 	FunctionCalling bool
 }
 
-func getEngineMap() map[string]Engine {
-	gpt30125 := Engine{16385, false, "gpt-3.5-turbo-0125", false, false}
-	gpt3turbo := Engine{16385, false, "gpt-3.5-turbo", false, false}
-	gpt31106 := Engine{16385, true, "gpt-3.5-turbo-1106", false, true}
+func getEngineMap() map[string]engine {
+	gpt30125 := engine{16385, false, "gpt-3.5-turbo-0125", false, false}
+	gpt3turbo := engine{16385, false, "gpt-3.5-turbo", false, false}
+	gpt31106 := engine{16385, true, "gpt-3.5-turbo-1106", false, true}
 
-	gpt4lat := Engine{128000, true, "gpt-4-turbo-2024-04-09", true, true}
-	gpt40125 := Engine{128000, false, "gpt-4-0125-preview", false, false}
-	gpt41106 := Engine{128000, true, "gpt-4-1106-preview", false, true}
+	gpt4lat := engine{128000, true, "gpt-4-turbo-2024-04-09", true, true}
+	gpt40125 := engine{128000, false, "gpt-4-0125-preview", false, false}
+	gpt41106 := engine{128000, true, "gpt-4-1106-preview", false, true}
 
-	return map[string]Engine{
+	return map[string]engine{
 		gpt30125.Name:  gpt30125,
 		gpt3turbo.Name: gpt3turbo,
 		gpt31106.Name:  gpt31106,
@@ -60,50 +60,50 @@ func getEngineOptionList() string {
 	return engineString[:len(engineString)-2]
 }
 
-type GPTStandardMessage struct {
+type gptStandardMessage struct {
 	Role    string  `json:"role"`
 	Content string  `json:"content"`
 	Name    *string `json:"name,omitempty"`
 }
 
-func (g *GPTStandardMessage) ValidateRole() bool {
+func (g *gptStandardMessage) ValidateRole() bool {
 	return containsRole([]string{"system", "user"}, g.Role)
 }
 
-func (g *GPTStandardMessage) GetType() string {
+func (g *gptStandardMessage) GetType() string {
 	return "standard"
 }
 
-func (g *GPTStandardMessage) GetRole() string {
+func (g *gptStandardMessage) GetRole() string {
 	return g.Role
 }
 
-type ImageUrl struct {
+type imageUrl struct {
 	Url    string  `json:"url"`
 	Detail *string `json:"detail,omitempty"`
 }
 
-type GPTMultiModalContent struct {
+type gptMultiModalContent struct {
 	Type     string    `json:"type"`
 	Text     *string   `json:"text,omitempty"`
-	ImageUrl *ImageUrl `json:"image_url,omitempty"`
+	ImageUrl *imageUrl `json:"image_url,omitempty"`
 }
 
-type GPTMultiModalCompliantMessage struct {
+type gptMultiModalCompliantMessage struct {
 	Role    string                 `json:"role"`
-	Content []GPTMultiModalContent `json:"content"`
+	Content []gptMultiModalContent `json:"content"`
 	Name    *string                `json:"name,omitempty"`
 }
 
-func (g *GPTMultiModalCompliantMessage) ValidateRole() bool {
+func (g *gptMultiModalCompliantMessage) ValidateRole() bool {
 	return containsRole([]string{"user"}, g.Role)
 }
 
-func (g *GPTMultiModalCompliantMessage) GetType() string {
+func (g *gptMultiModalCompliantMessage) GetType() string {
 	return "multimodal"
 }
 
-func (g *GPTMultiModalCompliantMessage) GetRole() string {
+func (g *gptMultiModalCompliantMessage) GetRole() string {
 	return g.Role
 }
 
@@ -116,55 +116,64 @@ type ToolCall struct {
 	} `json:"function"`
 }
 
-type GptAssistantMessage struct {
+type gptAssistantMessage struct {
 	Content   *string     `json:"content,omitempty"`
 	Role      string      `json:"role,omitempty"`
 	Name      *string     `json:"name,omitempty"`
 	ToolCalls *[]ToolCall `json:"tool_calls,omitempty"`
 }
 
-func (g *GptAssistantMessage) ValidateRole() bool {
+func (g *gptAssistantMessage) ValidateRole() bool {
 	return containsRole([]string{"assistant"}, g.Role)
 }
 
-func (g *GptAssistantMessage) GetType() string {
+func (g *gptAssistantMessage) GetType() string {
 	return "assistant"
 }
 
-func (g *GptAssistantMessage) GetRole() string {
+func (g *gptAssistantMessage) GetRole() string {
 	return g.Role
 }
 
-type GptToolMessage struct {
+func (g *gptAssistantMessage) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"content":    g.Content,
+		"role":       g.Role,
+		"name":       g.Name,
+		"tool_calls": g.ToolCalls,
+	}
+}
+
+type gptToolMessage struct {
 	Role       string `json:"role"`
 	Content    string `json:"Content"`
 	ToolCallId string `json:"tool_call_id"`
 }
 
-func (g *GptToolMessage) ValidateRole() bool {
+func (g *gptToolMessage) ValidateRole() bool {
 	return containsRole([]string{"tool"}, g.Role)
 }
 
-func (g *GptToolMessage) GetType() string {
+func (g *gptToolMessage) GetType() string {
 	return "tool"
 }
 
-func (g *GptToolMessage) GetRole() string {
+func (g *gptToolMessage) GetRole() string {
 	return g.Role
 }
 
-type ToolFunction struct {
+type toolFunction struct {
 	Description *string                `json:"description,omitempty"`
 	Name        string                 `json:"name"`
 	Parameters  map[string]interface{} `json:"parameters"`
 }
 
-type Tool struct {
+type tool struct {
 	Type     string       `json:"type"`
-	Function ToolFunction `json:"function"`
+	Function toolFunction `json:"function"`
 }
 
-func (t *Tool) validateTools(engine Engine) error {
+func (t *tool) validateTools(engine engine) error {
 	validSlice := []string{
 		"function",
 	}
@@ -182,10 +191,10 @@ func (t *Tool) validateTools(engine Engine) error {
 	return nil
 }
 
-type ChatGPT struct {
+type chatGpt struct {
 	Model            string             `json:"model"`
 	FrequencyPenalty *float32           `json:"frequency_penalty,omitempty"`
-	Messages         []MessageInterface `json:"messages"`
+	Messages         []messageInterface `json:"messages"`
 	LogitBias        *map[string]int    `json:"logit_bias,omitempty"`
 	LogProbs         *bool              `json:"log_probs,omitempty"`
 	TopLogprobs      *uint8             `json:"top_logprobs,omitempty"`
@@ -198,13 +207,13 @@ type ChatGPT struct {
 	Stream           *bool              `json:"stream,omitempty"`
 	Temperature      *float32           `json:"temperature,omitempty"`
 	TopP             *float32           `json:"top_p,omitempty"`
-	Tools            *[]Tool            `json:"tools,omitempty"`
+	Tools            *[]tool            `json:"tools,omitempty"`
 	ToolChoice       interface{}        `json:"tool_choice"`
 	key              string
 }
 
-func InitChatgpt(model, key string, maxTokens *int, temperature *float32) *ChatGPT {
-	c := ChatGPT{
+func initChatGpt(model, key string, maxTokens *int, temperature *float32) *chatGpt {
+	c := chatGpt{
 		Model:       model,
 		Temperature: temperature,
 		MaxTokens:   maxTokens,
@@ -252,7 +261,7 @@ type ChatCompletion struct {
 	} `json:"usage"`
 }
 
-type GptError struct {
+type gptError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
 	Param   string `json:"param"`
@@ -261,10 +270,10 @@ type GptError struct {
 
 type gptRequestError struct {
 	StatusCode int      `json:"statusCode"`
-	Error      GptError `json:"error"`
+	Error      gptError `json:"error"`
 }
 
-func validateResponseFormat(responseFormat map[string]string, engine Engine) error {
+func validateResponseFormat(responseFormat map[string]string, engine engine) error {
 
 	validSlice := []string{
 		"json_object", "text",
@@ -353,26 +362,26 @@ func validateToolChoice(toolChoice interface{}) error {
 	return nil
 }
 
-func validateMessages(engine Engine, messageSlice []MessageInterface) error {
+func validateMessages(engine engine, messageSlice []messageInterface) error {
 
 	for _, mess := range messageSlice {
 		if !mess.ValidateRole() {
-			return fmt.Errorf("MessageInterface of type %s does not accept the role you provided", mess.GetType())
+			return fmt.Errorf("messageInterface of type %s does not accept the role you provided", mess.GetType())
 		}
 
 		if mess.GetType() == "multimodal" && !engine.Multimodal {
-			return fmt.Errorf("MessageInterface of type %s is not multimodal friendly", mess.GetType())
+			return fmt.Errorf("messageInterface of type %s is not multimodal friendly", mess.GetType())
 		}
 
 		if mess.GetType() == "tool" && !engine.FunctionCalling {
-			return fmt.Errorf("MessageInterface of type %s is not function friendly", mess.GetType())
+			return fmt.Errorf("messageInterface of type %s is not function friendly", mess.GetType())
 		}
 	}
 
 	return nil
 }
 
-func (c *ChatGPT) Validate(messageSlice []MessageInterface) error {
+func (c *chatGpt) Validate(messageSlice []messageInterface) error {
 	floatHelper := helper.IsBetween[float32]
 	intHelper := helper.IsBetween[uint8]
 
@@ -396,7 +405,7 @@ func (c *ChatGPT) Validate(messageSlice []MessageInterface) error {
 		return fmt.Errorf("top p must be between 0.0 and 1.0 got %f", *c.TopP)
 	}
 
-	var engine Engine
+	var engine engine
 	var ok bool
 
 	if engine, ok = getEngineMap()[c.Model]; !ok {
@@ -440,17 +449,17 @@ TODO
 Add method to estimate context window For multimodal and regular requests
 */
 
-func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (error, *ChatCompletion) {
+func (c *chatGpt) Request(messages []messageInterface, ctx context.Context) (error, *ChatCompletion) {
 	lastMessage := messages[len(messages)-1]
 	var resp gptRequestError
 
 	if lastMessage.GetRole() != "user" {
-		err := GetStandardError("last message is not a user message")
+		err := getStandardError("last message is not a user message")
 		return &err, nil
 	}
 
 	if err := c.Validate(messages); err != nil {
-		standardErr := GetStandardError(err.Error())
+		standardErr := getStandardError(err.Error())
 		return &standardErr, nil
 	}
 
@@ -458,13 +467,13 @@ func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (err
 	c.Messages = messages
 
 	defer func() {
-		c.Messages = []MessageInterface{}
+		c.Messages = []messageInterface{}
 	}()
 
 	jsonBytes, err := json.Marshal(c)
 
 	if err != nil {
-		standardErr := GetStandardError(err.Error())
+		standardErr := getStandardError(err.Error())
 		return &standardErr, nil
 	}
 
@@ -474,7 +483,7 @@ func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (err
 	pRequest, err := http.NewRequestWithContext(ctx, "POST", url, reader)
 
 	if err != nil {
-		standardErr := GetStandardError(err.Error())
+		standardErr := getStandardError(err.Error())
 		return &standardErr, nil
 	}
 
@@ -484,7 +493,7 @@ func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (err
 	pResponse, err := client.Do(pRequest)
 
 	if err != nil {
-		standardErr := GetStandardError(err.Error())
+		standardErr := getStandardError(err.Error())
 		return &standardErr, nil
 	}
 
@@ -498,7 +507,7 @@ func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (err
 	responseBytes, err := io.ReadAll(pResponse.Body)
 
 	if err != nil {
-		standardErr := GetStandardError(err.Error())
+		standardErr := getStandardError(err.Error())
 		return &standardErr, nil
 	}
 
@@ -506,29 +515,29 @@ func (c *ChatGPT) Request(messages []MessageInterface, ctx context.Context) (err
 		var gptResp ChatCompletion
 
 		if err = json.Unmarshal(responseBytes, &gptResp); err != nil {
-			standardErr := GetStandardError(err.Error())
+			standardErr := getStandardError(err.Error())
 			return &standardErr, nil
 		}
 
 		return nil, &gptResp
 	} else {
 		if err = json.Unmarshal(responseBytes, &resp); err != nil {
-			standardErr := GetStandardError(err.Error())
+			standardErr := getStandardError(err.Error())
 			return &standardErr, nil
 		}
 
 		if pResponse.StatusCode == 429 {
-			rateLimitErr := GetRateLimitError(resp.Error.Message)
+			rateLimitErr := getRateLimitError(resp.Error.Message)
 			return &rateLimitErr, nil
 		}
 
-		standardErr := GetStandardError(resp.Error.Message)
+		standardErr := getStandardError(resp.Error.Message)
 		return &standardErr, nil
 	}
 }
 
-func ConvertChatCompletion(completion *ChatCompletion) *GptAssistantMessage {
-	var message GptAssistantMessage
+func ConvertChatCompletion(completion *ChatCompletion) map[string]interface{} {
+	var message gptAssistantMessage
 	message.Role = completion.Choices[0].Message.Role
 
 	var choiceMessage Choice
@@ -546,5 +555,5 @@ func ConvertChatCompletion(completion *ChatCompletion) *GptAssistantMessage {
 		message.Content = choiceMessage.Message.Content
 	}
 
-	return &message
+	return message.ToMap()
 }

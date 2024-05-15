@@ -1,12 +1,8 @@
-package command
+package llm
 
 import (
 	"testing"
 )
-
-/**
-TODO: Add unit test to helpers
-*/
 
 func TestValidateResponseFormat(t *testing.T) {
 
@@ -55,12 +51,12 @@ func TestValidateResponseFormat(t *testing.T) {
 
 func TestValidateTools(t *testing.T) {
 
-	func1 := ToolFunction{
+	func1 := toolFunction{
 		Name:       "test",
 		Parameters: map[string]interface{}{"test": "test"},
 	}
 
-	t1 := Tool{
+	t1 := tool{
 		Type:     "function",
 		Function: func1,
 	}
@@ -87,29 +83,29 @@ func TestValidateTools(t *testing.T) {
 func TestValidateMessages(t *testing.T) {
 
 	prompt := "this is a test"
-	content := GPTMultiModalContent{
+	content := gptMultiModalContent{
 		Type: "text",
 		Text: &prompt,
 	}
 
-	m1 := GPTMultiModalCompliantMessage{
+	m1 := gptMultiModalCompliantMessage{
 		Role: "user",
-		Content: []GPTMultiModalContent{
+		Content: []gptMultiModalContent{
 			content,
 		},
 	}
 
-	m3 := GptAssistantMessage{
+	m3 := gptAssistantMessage{
 		Content: &prompt,
 		Role:    "assistant",
 	}
 
-	m4 := GPTStandardMessage{
+	m4 := gptStandardMessage{
 		Content: prompt,
 		Role:    "system",
 	}
 
-	mList := []MessageInterface{
+	mList := []messageInterface{
 		&m1,
 		&m3,
 		&m4,

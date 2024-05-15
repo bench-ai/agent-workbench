@@ -53,7 +53,7 @@ operation.
 
 #### Settings
 ```json
-// whether or not the browser should be visible. Great for debugging purposes.
+// whether or not the chrome should be visible. Great for debugging purposes.
 {
   "headless": false
 }
@@ -68,7 +68,7 @@ operation.
 
 #### Commands
 ```json
-// Opens a webpage in the browser
+// Opens a webpage in the chrome
 {
   "command_name": "open_web_page",
   "params": {
@@ -347,7 +347,7 @@ These are the type of messages you can send to the llm
 {
   "operations": [
     {
-      "type": "browser",
+      "type": "chrome",
       "session_id": "my_session",
       "settings" : {
         "timeout": 5,

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"agent/browser"
-	"agent/command"
+	"agent/chrome"
+	browser2 "agent/command/browser"
+	"agent/command/llm"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -20,15 +21,11 @@ type Credentials struct {
 	APIKey string `json:"apiKey"`
 }
 
-type Workflow struct {
-	WorkflowType string `json:"workflow_type"`
-}
 type Settings struct {
 	Timeout     *int16                   `json:"timeout"`
 	Headless    bool                     `json:"headless"`
 	MaxToken    *int                     `json:"max_tokens"`
 	Credentials []Credentials            `json:"credentials"`
-	Workflow    Workflow                 `json:"workflow"`
 	LLMSettings []map[string]interface{} `json:"llm_settings"`
 	TryLimit    int16                    `json:"try_limit"`
 }
@@ -37,7 +34,7 @@ type Command struct {
 	CommandName string                 `json:"command_name,omitempty"`
 	Params      map[string]interface{} `json:"params,omitempty"`
 	MessageType string                 `json:"message_type"`
-	Message     interface{}            `json:"message"`
+	Message     map[string]interface{} `json:"message"`
 }
 
 type Operation struct {
@@ -57,63 +54,27 @@ func runBrowserCommands(settings Settings, commandList []Command, sessionPath st
 	browserBuilder.Execute()
 }
 
-func collectSettings(llmSettings map[string]interface{}, key string, required bool) interface{} {
-	if val, ok := llmSettings[key]; ok {
-		return val
-	}
-
-	if required {
-		log.Fatalf(`setting: '%s' not found`, key)
-	}
-
-	return nil
-}
-
 // create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
 func runLlmCommands(settings Settings, commandList []Command, sessionPath string) {
 
-	var llmArray []command.LLM
+	messageTypeSlice := make([]string, len(commandList))
+	messageSlice := make([]map[string]interface{}, len(commandList))
+	modelSettingsSlice := make([]map[string]interface{}, len(settings.LLMSettings))
 
-	for _, item := range settings.LLMSettings {
-
-		name, ok := item["name"]
-
-		if !ok {
-			log.Fatal("LLM setting name not found")
-		}
-
-		switch name {
-		case "OpenAI":
-			apiKey, ok := collectSettings(item, "api_key", true).(string)
-			if !ok {
-				log.Fatal("api_key must be a string")
-			}
-
-			model, ok := collectSettings(item, "model", true).(string)
-			if !ok {
-				log.Fatal("model must be a string")
-			}
-
-			temp := collectSettings(item, "temperature", false)
-			var temperature float64
-			if temp != nil {
-				if temperature, ok = temp.(float64); !ok {
-					log.Fatal("temperature must be a float")
-				}
-			}
-
-			tempfix := float32(temperature)
-
-			gpt := command.InitChatgpt(model, apiKey, settings.MaxToken, &tempfix)
-			llmArray = append(llmArray, gpt)
-		default:
-			log.Fatalf("%s is not a supported llm \n", name)
-		}
+	for index, com := range commandList {
+		messageTypeSlice[index] = com.MessageType
+		messageSlice[index] = com.Message
 	}
 
-	messageList := addLlmOperation(commandList)
+	copy(modelSettingsSlice, settings.LLMSettings)
 
-	chat, err := command.ExponentialBackoff(llmArray, &messageList, settings.TryLimit, settings.Timeout)
+	chat, err := llm.Execute(
+		messageTypeSlice,
+		messageSlice,
+		modelSettingsSlice,
+		settings.MaxToken,
+		settings.TryLimit,
+		settings.Timeout)
 
 	if err != nil {
 		log.Fatalf("could not execute command %v", err)
@@ -125,11 +86,11 @@ func runLlmCommands(settings Settings, commandList []Command, sessionPath string
 
 	type writeStruct struct {
 		SettingsSlice []map[string]interface{} `json:"settings"`
-		Completion    *command.ChatCompletion  `json:"completion"`
+		Completion    *llm.ChatCompletion      `json:"completion"`
 		MessageList   []Command                `json:"message_list"`
 	}
 
-	msg := command.ConvertChatCompletion(chat)
+	msg := llm.ConvertChatCompletion(chat)
 	commandList = append(commandList, Command{
 		Message:     msg,
 		MessageType: "assistant",
@@ -295,7 +256,7 @@ func newSessionCommand() *sessionCommand {
 
 // run
 /**
-The run command, checks if the user wishes to run their browser in headless mode, and whether they are pointing to
+The run command, checks if the user wishes to run their chrome in headless mode, and whether they are pointing to
 a file or passing raw json
 */
 func (r *runCommand) run() {
@@ -361,7 +322,7 @@ func (r *runCommand) run() {
 
 	for _, op := range config.Operations {
 		switch op.Type {
-		case "browser":
+		case "chrome":
 			runBrowserCommands(op.Settings, op.CommandList, pth)
 		case "llm":
 			runLlmCommands(op.Settings, op.CommandList, pth)
@@ -410,29 +371,29 @@ checks for if an operation exists and adds it to the execution queue
 func addOperation(com Command, builder *browser.Executor) {
 
 	paramBytes, _ := json.Marshal(com.Params)
-	var browserParams command.BrowserParams
+	var browserParams browser2.BrowserParams
 
 	switch com.CommandName {
 	case "open_web_page":
-		browserParams = &command.OpenWebPage{}
+		browserParams = &browser2.OpenWebPage{}
 	case "full_page_screenshot":
-		browserParams = &command.FullPageScreenShot{}
+		browserParams = &browser2.FullPageScreenShot{}
 	case "element_screenshot":
-		browserParams = &command.ElementScreenshot{}
+		browserParams = &browser2.ElementScreenshot{}
 	case "collect_nodes":
-		browserParams = &command.CollectNodes{}
+		browserParams = &browser2.CollectNodes{}
 	case "click":
-		browserParams = &command.Click{}
+		browserParams = &browser2.Click{}
 	case "save_html":
-		browserParams = &command.SaveHtml{}
+		browserParams = &browser2.SaveHtml{}
 	case "sleep":
-		browserParams = &command.Sleep{}
+		browserParams = &browser2.Sleep{}
 	case "iterate_html":
-		browserParams = &command.IterateHtml{}
+		browserParams = &browser2.IterateHtml{}
 	case "acquire_location":
-		browserParams = &command.AcquireLocation{}
+		browserParams = &browser2.AcquireLocation{}
 	default:
-		log.Fatalf("%s is not a supported browser command \n", com.CommandName)
+		log.Fatalf("%s is not a supported chrome command \n", com.CommandName)
 	}
 
 	if err := json.Unmarshal(paramBytes, browserParams); err != nil {
@@ -444,46 +405,6 @@ func addOperation(com Command, builder *browser.Executor) {
 	}
 
 	browserParams.AppendTask(builder)
-}
-
-// switch on message_type and builds an array of messages
-func addLlmOperation(msgSlice []Command) []command.MessageInterface {
-
-	var retSlice []command.MessageInterface
-	for _, msg := range msgSlice {
-		messageType := msg.MessageType
-
-		var message command.MessageInterface
-
-		messageByte, err := json.Marshal(msg.Message)
-
-		if err != nil {
-			log.Fatalf("could not marshal message due to: %v", err)
-		}
-
-		switch messageType {
-		case "multimodal":
-			message = &command.GPTMultiModalCompliantMessage{}
-		case "standard":
-			message = &command.GPTStandardMessage{}
-		case "assistant":
-			message = &command.GptAssistantMessage{}
-		case "tool":
-			message = &command.GptToolMessage{}
-		default:
-			log.Fatalf("%s is not a supported llm message type \n", messageType)
-		}
-
-		err = json.Unmarshal(messageByte, &message)
-
-		if err != nil {
-			log.Fatalf("could not read message due to: %v", err)
-		}
-
-		retSlice = append(retSlice, message)
-	}
-
-	return retSlice
 }
 
 // root
