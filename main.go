@@ -2,7 +2,7 @@ package main
 
 import (
 	"agent/chrome"
-	browser2 "agent/command/browser"
+	"agent/command/browser"
 	"agent/command/llm"
 	"encoding/json"
 	"errors"
@@ -44,11 +44,11 @@ type Operation struct {
 }
 
 func runBrowserCommands(settings Settings, commandList []Command, sessionPath string) {
-	var browserBuilder browser.Executor
+	var browserBuilder chrome.Executor
 	browserBuilder.Init(settings.Headless, settings.Timeout, sessionPath)
 
 	for _, com := range commandList {
-		addOperation(com, &browserBuilder)
+		browser.AddOperation(com.Params, com.CommandName, &browserBuilder)
 	}
 
 	browserBuilder.Execute()
@@ -322,7 +322,7 @@ func (r *runCommand) run() {
 
 	for _, op := range config.Operations {
 		switch op.Type {
-		case "chrome":
+		case "browser":
 			runBrowserCommands(op.Settings, op.CommandList, pth)
 		case "llm":
 			runLlmCommands(op.Settings, op.CommandList, pth)
@@ -362,49 +362,6 @@ func newVersionCommand() *versionCommand {
 	}
 
 	return &vc
-}
-
-// addOperation
-/*
-checks for if an operation exists and adds it to the execution queue
-*/
-func addOperation(com Command, builder *browser.Executor) {
-
-	paramBytes, _ := json.Marshal(com.Params)
-	var browserParams browser2.BrowserParams
-
-	switch com.CommandName {
-	case "open_web_page":
-		browserParams = &browser2.OpenWebPage{}
-	case "full_page_screenshot":
-		browserParams = &browser2.FullPageScreenShot{}
-	case "element_screenshot":
-		browserParams = &browser2.ElementScreenshot{}
-	case "collect_nodes":
-		browserParams = &browser2.CollectNodes{}
-	case "click":
-		browserParams = &browser2.Click{}
-	case "save_html":
-		browserParams = &browser2.SaveHtml{}
-	case "sleep":
-		browserParams = &browser2.Sleep{}
-	case "iterate_html":
-		browserParams = &browser2.IterateHtml{}
-	case "acquire_location":
-		browserParams = &browser2.AcquireLocation{}
-	default:
-		log.Fatalf("%s is not a supported chrome command \n", com.CommandName)
-	}
-
-	if err := json.Unmarshal(paramBytes, browserParams); err != nil {
-		log.Fatalf("failed to parse %s command \n", com.CommandName)
-	}
-
-	if err := browserParams.Validate(); err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	browserParams.AppendTask(builder)
 }
 
 // root

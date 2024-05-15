@@ -1,4 +1,4 @@
-package browser
+package chrome
 
 import (
 	"github.com/chromedp/cdproto/cdp"

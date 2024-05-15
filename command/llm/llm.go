@@ -35,7 +35,7 @@ func getEngineMap() map[string]engine {
 	gpt30125 := engine{16385, false, "gpt-3.5-turbo-0125", false, false}
 	gpt3turbo := engine{16385, false, "gpt-3.5-turbo", false, false}
 	gpt31106 := engine{16385, true, "gpt-3.5-turbo-1106", false, true}
-
+	gpt4O := engine{128000, true, "gpt-4o-2024-05-13", true, true}
 	gpt4lat := engine{128000, true, "gpt-4-turbo-2024-04-09", true, true}
 	gpt40125 := engine{128000, false, "gpt-4-0125-preview", false, false}
 	gpt41106 := engine{128000, true, "gpt-4-1106-preview", false, true}
@@ -47,6 +47,7 @@ func getEngineMap() map[string]engine {
 		gpt4lat.Name:   gpt4lat,
 		gpt40125.Name:  gpt40125,
 		gpt41106.Name:  gpt41106,
+		gpt4O.Name:     gpt4O,
 	}
 }
 

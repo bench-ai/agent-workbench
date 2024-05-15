@@ -2,6 +2,7 @@ package browser
 
 import (
 	"agent/chrome"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/chromedp/chromedp"
@@ -10,22 +11,22 @@ import (
 	"time"
 )
 
-type Params interface {
+type params interface {
 	Validate() error
 }
 
-type BrowserParams interface {
-	Params
-	AppendTask(b *browser.Executor)
+type appendParams interface {
+	params
+	AppendTask(b *chrome.Executor)
 }
 
-type FullPageScreenShot struct {
+type fullPageScreenShot struct {
 	Quality        uint8  `json:"quality"`
 	Name           string `json:"name"`
 	SnapShotFolder string `json:"snapshot_name"`
 }
 
-func (f *FullPageScreenShot) Validate() error {
+func (f *fullPageScreenShot) Validate() error {
 	if f.Quality == 0 {
 		return errors.New("quality must be greater than zero")
 	}
@@ -37,15 +38,15 @@ func (f *FullPageScreenShot) Validate() error {
 	return nil
 }
 
-func (f *FullPageScreenShot) AppendTask(b *browser.Executor) {
+func (f *fullPageScreenShot) AppendTask(b *chrome.Executor) {
 	b.FullPageScreenShot(f.Quality, f.Name, f.SnapShotFolder)
 }
 
-type OpenWebPage struct {
+type openWebPage struct {
 	Url string `json:"url"`
 }
 
-func (o *OpenWebPage) Validate() error {
+func (o *openWebPage) Validate() error {
 	if !(strings.HasPrefix(o.Url, "http://") || strings.HasPrefix(o.Url, "https://")) {
 		return errors.New("url must begin with http:// or https://")
 	}
@@ -53,18 +54,18 @@ func (o *OpenWebPage) Validate() error {
 	return nil
 }
 
-func (o *OpenWebPage) AppendTask(b *browser.Executor) {
+func (o *openWebPage) AppendTask(b *chrome.Executor) {
 	b.Navigate(o.Url)
 }
 
-type ElementScreenshot struct {
+type elementScreenshot struct {
 	Scale          float64 `json:"scale"`
 	Name           string  `json:"name"`
 	Selector       string  `json:"selector"`
 	SnapShotFolder string  `json:"snapshot_name"`
 }
 
-func (e *ElementScreenshot) Validate() error {
+func (e *elementScreenshot) Validate() error {
 	if !strings.HasSuffix(e.Name, ".jpg") {
 		return errors.New("name must end with .jpg")
 	}
@@ -76,11 +77,11 @@ func (e *ElementScreenshot) Validate() error {
 	return nil
 }
 
-func (e *ElementScreenshot) AppendTask(b *browser.Executor) {
+func (e *elementScreenshot) AppendTask(b *chrome.Executor) {
 	b.ElementScreenshot(e.Scale, e.Selector, e.Name, e.SnapShotFolder)
 }
 
-type CollectNodes struct {
+type collectNodes struct {
 	Selector       string `json:"selector"`
 	WaitReady      bool   `json:"wait_ready"`
 	GetStyles      bool   `json:"get_styles"`
@@ -89,23 +90,23 @@ type CollectNodes struct {
 	SnapShotFolder string `json:"snapshot_name"`
 }
 
-func (c *CollectNodes) Validate() error {
+func (c *collectNodes) Validate() error {
 	if strings.Contains(c.SnapShotFolder, ".") {
 		return errors.New("snapshot_folder must be folder not a file")
 	}
 	return nil
 }
 
-func (c *CollectNodes) AppendTask(b *browser.Executor) {
+func (c *collectNodes) AppendTask(b *chrome.Executor) {
 	b.CollectNodes(c.Selector, c.SnapShotFolder, c.Prepopulate, c.WaitReady, c.Recurse, c.GetStyles)
 }
 
-type Click struct {
+type click struct {
 	Selector  string `json:"selector"`
 	QueryType string `json:"query_type"`
 }
 
-func (c *Click) Validate() error {
+func (c *click) Validate() error {
 
 	if c.Selector == "" {
 		return errors.New("selector is required")
@@ -124,7 +125,7 @@ func (c *Click) Validate() error {
 	return fmt.Errorf("query type %s not supported", c.QueryType)
 }
 
-func (c *Click) AppendTask(b *browser.Executor) {
+func (c *click) AppendTask(b *chrome.Executor) {
 	var query func(s *chromedp.Selector)
 
 	switch c.QueryType {
@@ -137,34 +138,34 @@ func (c *Click) AppendTask(b *browser.Executor) {
 	b.Click(c.Selector, query)
 }
 
-type SaveHtml struct {
+type saveHtml struct {
 	SnapShotFolder string `json:"snapshot_name"`
 }
 
-func (s *SaveHtml) Validate() error {
+func (s *saveHtml) Validate() error {
 	if strings.Contains(s.SnapShotFolder, ".") {
 		return errors.New("snapshot_folder must be folder not a file")
 	}
 	return nil
 }
 
-func (s *SaveHtml) AppendTask(b *browser.Executor) {
+func (s *saveHtml) AppendTask(b *chrome.Executor) {
 	b.SaveSnapshot(s.SnapShotFolder)
 }
 
-type Sleep struct {
+type sleep struct {
 	Seconds uint16 `json:"seconds"`
 }
 
-func (s *Sleep) Validate() error {
+func (s *sleep) Validate() error {
 	return nil
 }
 
-func (s *Sleep) AppendTask(b *browser.Executor) {
+func (s *sleep) AppendTask(b *chrome.Executor) {
 	b.SleepForSeconds(s.Seconds)
 }
 
-type IterateHtml struct {
+type iterateHtml struct {
 	IterLimit         *uint16 `json:"iter_limit"`
 	PauseTime         *uint32 `json:"pause_time"`
 	StartingSnapshot  *uint8  `json:"starting_snapshot"`
@@ -175,7 +176,7 @@ type IterateHtml struct {
 	ImageQuality      uint8   `json:"image_quality"`
 }
 
-func (i *IterateHtml) Validate() error {
+func (i *iterateHtml) Validate() error {
 
 	if i.PauseTime == nil {
 		pause := uint32(500)
@@ -206,7 +207,7 @@ func (i *IterateHtml) Validate() error {
 	return nil
 }
 
-func (i *IterateHtml) AppendTask(b *browser.Executor) {
+func (i *iterateHtml) AppendTask(b *chrome.Executor) {
 
 	b.HtmlIterator(
 		*i.IterLimit,
@@ -219,17 +220,60 @@ func (i *IterateHtml) AppendTask(b *browser.Executor) {
 		i.SaveNode)
 }
 
-type AcquireLocation struct {
+type acquireLocation struct {
 	SnapShotFolder string `json:"snapshot_name"`
 }
 
-func (a *AcquireLocation) Validate() error {
+func (a *acquireLocation) Validate() error {
 	if strings.Contains(a.SnapShotFolder, ".") {
 		return errors.New("snapshot_folder must be folder not a file")
 	}
 	return nil
 }
 
-func (a *AcquireLocation) AppendTask(b *browser.Executor) {
+func (a *acquireLocation) AppendTask(b *chrome.Executor) {
 	b.AcquireLocation(a.SnapShotFolder)
+}
+
+// addOperation
+/*
+checks for if an operation exists and adds it to the execution queue
+*/
+func AddOperation(params map[string]interface{}, commandName string, builder *chrome.Executor) {
+
+	paramBytes, _ := json.Marshal(params)
+	var browserParams appendParams
+
+	switch commandName {
+	case "open_web_page":
+		browserParams = &openWebPage{}
+	case "full_page_screenshot":
+		browserParams = &fullPageScreenShot{}
+	case "element_screenshot":
+		browserParams = &elementScreenshot{}
+	case "collect_nodes":
+		browserParams = &collectNodes{}
+	case "click":
+		browserParams = &click{}
+	case "save_html":
+		browserParams = &saveHtml{}
+	case "sleep":
+		browserParams = &sleep{}
+	case "iterate_html":
+		browserParams = &iterateHtml{}
+	case "acquire_location":
+		browserParams = &acquireLocation{}
+	default:
+		log.Fatalf("%s is not a supported chrome command \n", commandName)
+	}
+
+	if err := json.Unmarshal(paramBytes, browserParams); err != nil {
+		log.Fatalf("failed to parse %s command \n", commandName)
+	}
+
+	if err := browserParams.Validate(); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	browserParams.AppendTask(builder)
 }
