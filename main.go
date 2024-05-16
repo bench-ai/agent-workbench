@@ -15,16 +15,10 @@ import (
 	"strings"
 )
 
-type Credentials struct {
-	Name   string `json:"Name"`
-	APIKey string `json:"apiKey"`
-}
-
 type Settings struct {
 	Timeout     *int16                   `json:"timeout"`
 	Headless    bool                     `json:"headless"`
 	MaxToken    *int                     `json:"max_tokens"`
-	Credentials []Credentials            `json:"credentials"`
 	LLMSettings []map[string]interface{} `json:"llm_settings"`
 	TryLimit    int16                    `json:"try_limit"`
 }

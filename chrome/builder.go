@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// addOperation
+// AddOperation
 /*
 checks for if an operation exists and adds it to the execution queue
 */
 
-func addOperation(
+func AddOperation(
 	params map[string]interface{},
 	commandName string,
 	sessionPath string,
@@ -65,7 +65,7 @@ func runTasks(
 	tsk := make(chromedp.Tasks, len(commandNameSlice))
 
 	for index, cName := range commandNameSlice {
-		tsk[index] = addOperation(paramSlice[index], cName, sessionPath, job)
+		tsk[index] = AddOperation(paramSlice[index], cName, sessionPath, job)
 	}
 
 	err := chromedp.Run(ctx, tsk)

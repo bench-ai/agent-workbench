@@ -57,3 +57,18 @@ func IsGte[T cmp.Ordered](lowVal, highVal T, checkEqual bool) bool {
 func IsBetween[T cmp.Ordered](lowRange, highRange, val T, lte, gte bool) bool {
 	return IsGte[T](lowRange, val, gte) && IsLte[T](val, highRange, lte)
 }
+
+type Set[T comparable] map[T]struct{}
+
+func (s *Set[T]) Insert(item T) {
+	(*s)[item] = struct{}{}
+}
+
+func (s *Set[T]) Delete(item T) {
+	delete(*s, item)
+}
+
+func (s *Set[T]) Has(item T) bool {
+	_, ok := (*s)[item]
+	return ok
+}
