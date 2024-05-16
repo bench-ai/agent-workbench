@@ -2,7 +2,6 @@ package main
 
 import (
 	"agent/chrome"
-	"agent/command/browser"
 	"agent/command/llm"
 	"encoding/json"
 	"errors"
@@ -44,14 +43,15 @@ type Operation struct {
 }
 
 func runBrowserCommands(settings Settings, commandList []Command, sessionPath string) {
-	var browserBuilder chrome.Executor
-	browserBuilder.Init(settings.Headless, settings.Timeout, sessionPath)
+	paramSlice := make([]map[string]interface{}, len(commandList))
+	nameSlice := make([]string, len(commandList))
 
-	for _, com := range commandList {
-		browser.AddOperation(com.Params, com.CommandName, &browserBuilder)
+	for index, val := range commandList {
+		nameSlice[index] = val.CommandName
+		paramSlice[index] = val.Params
 	}
 
-	browserBuilder.Execute()
+	chrome.RunSequentialCommands(settings.Headless, settings.Timeout, sessionPath, paramSlice, nameSlice)
 }
 
 // create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations

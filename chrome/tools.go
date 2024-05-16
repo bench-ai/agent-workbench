@@ -3,138 +3,44 @@ package chrome
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/css"
 	"github.com/chromedp/chromedp"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 )
 
-type nodeMetaData struct {
-	Id         int64               `json:"id"`
-	Type       string              `json:"type"`
-	Xpath      string              `json:"xpath"`
-	Attributes map[string]string   `json:"attributes"`
-	CssStyles  []map[string]string `json:"css_styles,omitempty"`
+type fileJob struct {
+	c  chan error
+	wg sync.WaitGroup
 }
 
-type nodeWithStyles struct {
-	cssStyles []*css.ComputedStyleProperty
-	node      *cdp.Node
+func (f *fileJob) writeBytes(byteSlice []byte, writePath string) {
+	f.wg.Add(1)
+	go func() {
+		defer f.wg.Done()
+		f.c <- os.WriteFile(writePath, byteSlice, 0777)
+	}()
 }
 
-type imageMetaData struct {
-	snapShotName string
-	imageName    string
-	byteData     *[]byte
+type browserCommand interface {
+	validate() error
+	getAction(job *fileJob) chromedp.ActionFunc
 }
 
-type Executor struct {
-	Url         string
-	savePath    string
-	ctx         context.Context
-	cancel      context.CancelFunc
-	tasks       chromedp.Tasks
-	imageList   []*imageMetaData
-	htmlMap     map[string]*string
-	locationMap map[string][]*string
-	nodeMap     map[string]*[]*nodeWithStyles
-}
-
-func (b *Executor) Init(headless bool, timeout *int16, sessionPath string) *Executor {
-
-	b.savePath = sessionPath
-
-	if headless {
-		b.ctx, b.cancel = chromedp.NewContext(
-			context.Background(),
-		)
-	} else {
-		actx, _ := chromedp.NewExecAllocator(
-			context.Background(),
-			append(
-				chromedp.DefaultExecAllocatorOptions[:],
-				//chromedp.WindowSize(200, 200),
-				chromedp.Flag("headless", false))...)
-
-		b.ctx, b.cancel = chromedp.NewContext(
-			actx,
-		)
+func createSnapshotFolder(savePath, snapshot string) string {
+	folderPath := filepath.Join(savePath, "snapshots", snapshot)
+	imagePath := filepath.Join(folderPath, "images")
+	if err := os.MkdirAll(imagePath, 0777); !os.IsExist(err) && err != nil {
+		log.Fatal("Could not create directory: " + folderPath)
 	}
 
-	if timeout != nil {
-		b.ctx, b.cancel = context.WithTimeout(b.ctx, time.Duration(*timeout)*time.Second)
-	}
-
-	b.htmlMap = make(map[string]*string)
-	b.nodeMap = make(map[string]*[]*nodeWithStyles)
-	b.imageList = make([]*imageMetaData, 0, 10)
-	b.locationMap = make(map[string][]*string)
-
-	return b
-}
-
-func (b *Executor) appendTask(action chromedp.Action) {
-	b.tasks = append(b.tasks, action)
-}
-
-func (b *Executor) Navigate(url string) {
-	b.tasks = append(b.tasks, chromedp.Navigate(url))
-}
-
-func (b *Executor) FullPageScreenShot(quality uint8, name, snapshot string) {
-	var buf []byte
-	var imageData imageMetaData
-	b.appendTask(chromedp.FullScreenshot(&buf, int(quality)))
-
-	imageData.byteData = &buf
-	imageData.snapShotName = snapshot
-	imageData.imageName = name
-
-	b.imageList = append(b.imageList, &imageData)
-}
-
-func (b *Executor) ElementScreenshot(scale float64, selector string, name, snapshot string) {
-	var buf []byte
-	var imageData imageMetaData
-	b.appendTask(chromedp.WaitVisible(selector))
-	b.appendTask(chromedp.ScreenshotScale(selector, scale, &buf, chromedp.NodeVisible))
-
-	imageData.byteData = &buf
-	imageData.snapShotName = snapshot
-	imageData.imageName = name
-
-	b.imageList = append(b.imageList, &imageData)
-}
-
-// Click
-/*
-Instructs the chrome agent to click on a section of the webpage
-*/
-func (b *Executor) Click(selector string, queryFunc func(s *chromedp.Selector)) {
-	b.appendTask(chromedp.Click(selector, queryFunc))
-}
-
-// SleepForSeconds
-/*
-Lets the chrome pause operations for a certain amount of time
-*/
-func (b *Executor) SleepForSeconds(seconds uint16) {
-	b.appendTask(
-		chromedp.Sleep(time.Duration(seconds) * time.Second))
-}
-
-// SaveSnapshot
-/*
-Collects all the HTML associated with a webpage, saves all operations that led to the creation of the html,
-we use it for snapshot purposes
-*/
-func (b *Executor) SaveSnapshot(snapshotName string) {
-	var snapShotHtml string
-	b.appendTask(chromedp.OuterHTML("body", &snapShotHtml))
-	b.htmlMap[snapshotName] = &snapShotHtml
+	return folderPath
 }
 
 // parseThroughNodes
@@ -177,209 +83,509 @@ func parseThroughNodes(nodeSlice []*nodeWithStyles) []nodeMetaData {
 	return nodeMetaDataSlice
 }
 
-// createSnapshotFolder
-/*
-Creates Snapshot folder if it does not exist already
-*/
-func (b *Executor) createSnapshotFolder(snapshot string) string {
-	folderPath := filepath.Join(b.savePath, "snapshots", snapshot)
-	imagePath := filepath.Join(folderPath, "images")
-	if err := os.MkdirAll(imagePath, 0777); !os.IsExist(err) && err != nil {
-		log.Fatal("Could not create directory: " + folderPath)
-	}
-
-	return folderPath
+type nodeMetaData struct {
+	Id         int64               `json:"id"`
+	Type       string              `json:"type"`
+	Xpath      string              `json:"xpath"`
+	Attributes map[string]string   `json:"attributes"`
+	CssStyles  []map[string]string `json:"css_styles,omitempty"`
 }
 
-func populatedNodeAction(
-	selector string,
-	prepopulate bool,
-	recurse bool,
-	nodesWithStyles *[]*nodeWithStyles) chromedp.Tasks {
-	return chromedp.Tasks{
-		chromedp.ActionFunc(func(c context.Context) error {
-			var popSlice []chromedp.PopulateOption
-			if prepopulate {
-				popSlice = append(popSlice, chromedp.PopulateWait(1*time.Second))
-			}
-
-			var nodeSlice []*cdp.Node
-
-			err := chromedp.Nodes(
-				selector,
-				&nodeSlice,
-				chromedp.Populate(-1, true, popSlice...),
-			).Do(c)
-
-			if err != nil {
-				return err
-			}
-
-			if nodesWithStyles != nil {
-
-				if recurse {
-					nodeSlice = flattenNode(nodeSlice)
-				}
-
-				for _, node := range nodeSlice {
-					if cs, err := css.GetComputedStyleForNode(node.NodeID).Do(c); err == nil {
-						*nodesWithStyles = append(*nodesWithStyles, &nodeWithStyles{cs, node})
-					} else {
-						*nodesWithStyles = append(*nodesWithStyles, &nodeWithStyles{node: node})
-					}
-				}
-			}
-
-			return nil
-		}),
-	}
+type nodeWithStyles struct {
+	cssStyles []*css.ComputedStyleProperty
+	node      *cdp.Node
 }
 
-// CollectNodes
-/*
-Collect all element nodes in the html webpage with the options to add css styles
-*/
-func (b *Executor) CollectNodes(
-	selector,
-	snapshotName string,
-	prepopulate,
-	waitReady,
-	recurse,
-	nodesWithStyles bool,
-
-) {
-
-	nodeSlice := make([]*nodeWithStyles, 0, 100)
-
-	if waitReady {
-		b.appendTask(chromedp.WaitReady(selector))
-	}
-
-	b.appendTask(
-		populatedNodeAction(
-			selector,
-			prepopulate,
-			recurse,
-			func() *[]*nodeWithStyles {
-				if nodesWithStyles {
-					return &nodeSlice
-				} else {
-					return nil
-				}
-			}()),
-	)
-
-	b.nodeMap[snapshotName] = &nodeSlice
-}
-
-func (b *Executor) HtmlIterator(
-	iterLimit uint16,
-	pauseTime uint32,
-	startingSnapshot uint8,
-	snapshotName string,
-	imageQuality uint8,
-	saveImg bool,
-	saveHtml bool,
-	saveNodes bool,
-) {
-
-	pImgList := &b.imageList
-	if !saveImg {
-		pImgList = nil
-	}
-
-	pHtmlMap := b.htmlMap
-	if !saveHtml {
-		pHtmlMap = nil
-	}
-
-	pNodeMap := b.nodeMap
-	if !saveNodes {
-		pNodeMap = nil
-	}
-
-	b.appendTask(
-		htmlIteratorAction(
-			iterLimit, pauseTime, startingSnapshot, snapshotName, imageQuality, pHtmlMap, pNodeMap, pImgList,
-		),
-	)
-}
-
-func (b *Executor) AcquireLocation(snapshot string) {
-	var loc string
-
-	b.appendTask(chromedp.ActionFunc(func(c context.Context) error {
-		err := chromedp.Location(&loc).Do(c)
+func navigateToUrl(
+	url string) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		err := chromedp.Navigate(url).Do(c)
 		if err != nil {
 			return err
 		}
 		return err
-	}))
-
-	b.locationMap[snapshot] = append(b.locationMap[snapshot], &loc)
+	}
 }
 
-func (b *Executor) Execute() {
-	defer b.cancel()
-	if err := chromedp.Run(b.ctx, b.tasks); err != nil {
-		log.Fatalf("Unable to run chrome tasks due to: %v", err)
-	}
-
-	for _, imd := range b.imageList {
-
-		folderPath := b.createSnapshotFolder(imd.snapShotName)
-		pth := filepath.Join(folderPath, "images", imd.imageName)
-		if err := os.WriteFile(pth, *imd.byteData, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
-		}
-	}
-
-	for snapShotName, html := range b.htmlMap {
-
-		folderPath := b.createSnapshotFolder(snapShotName)
-
-		pth := filepath.Join(folderPath, "body.txt")
-
-		byteSlice := []byte(*html)
-		if err := os.WriteFile(pth, byteSlice, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
-		}
-	}
-
-	for snapShotName, node := range b.nodeMap {
-		folderPath := b.createSnapshotFolder(snapShotName)
-
-		pth := filepath.Join(folderPath, "nodeData.json")
-
-		metaDataSlice := parseThroughNodes(*node)
-
-		byteSlice, err := json.MarshalIndent(metaDataSlice, "", "    ")
-
-		if err != nil {
-			log.Fatalf("Unable to marshal node meta data: %v", err)
-		}
-
-		if err := os.WriteFile(pth, byteSlice, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
-		}
-	}
-
-	for snapShotName, location := range b.locationMap {
-		folderPath := b.createSnapshotFolder(snapShotName)
-		pth := filepath.Join(folderPath, "locationData.json")
-		byteSlice, err := json.MarshalIndent(location, "", "    ")
-
-		if err != nil {
-			log.Fatalf("Unable to marshal node meta data: %v", err)
-		}
-
-		if err := os.WriteFile(pth, byteSlice, 0666); err != nil {
-			log.Fatalf("Was unable to write file: %s, due to error: %v", pth, err)
-		}
-	}
-
-	b.htmlMap = make(map[string]*string)
-	b.nodeMap = make(map[string]*[]*nodeWithStyles)
-	b.imageList = make([]*imageMetaData, 0, 10)
-	b.locationMap = make(map[string][]*string)
+type navigateWebPage struct {
+	url string
 }
+
+func (n *navigateWebPage) validate() error {
+	if !(strings.HasPrefix(n.url, "http://") || strings.HasPrefix(n.url, "https://")) {
+		return errors.New("url must begin with http:// or https://")
+	}
+	return nil
+}
+
+func navInitFromJson(jsonBytes []byte) *navigateWebPage {
+	type body struct {
+		Url string `json:"url"`
+	}
+
+	bdy := &body{}
+
+	err := json.Unmarshal(jsonBytes, bdy)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return &navigateWebPage{
+		url: bdy.Url,
+	}
+}
+
+func (n *navigateWebPage) getAction(job *fileJob) chromedp.ActionFunc {
+	_ = job
+	return navigateToUrl(n.url)
+}
+
+type fullPageScreenShot struct {
+	quality  uint8
+	savePath string
+}
+
+func takeFullPageScreenshot(
+	quality uint8,
+	buffer *[]byte) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		err := chromedp.FullScreenshot(buffer, int(quality)).Do(c)
+		if err != nil {
+			return err
+		}
+
+		return err
+	}
+}
+
+func fpsInitFromJson(jsonBytes []byte, sessionPath string) *fullPageScreenShot {
+	type body struct {
+		Quality        uint8  `json:"quality"`
+		Name           string `json:"name"`
+		SnapShotFolder string `json:"snapshot_name"`
+	}
+
+	bdy := &body{}
+
+	err := json.Unmarshal(jsonBytes, bdy)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	folderPath := createSnapshotFolder(sessionPath, bdy.SnapShotFolder)
+
+	fullPage := fullPageScreenShot{
+		savePath: folderPath,
+		quality:  bdy.Quality,
+	}
+
+	return &fullPage
+}
+
+func (f *fullPageScreenShot) validate() error {
+	if f.quality <= 0 {
+		return errors.New("quality must be greater than zero")
+	}
+
+	if !strings.HasSuffix(f.savePath, ".jpg") {
+		return errors.New("name must end with .jpg")
+	}
+
+	return nil
+}
+
+func (f *fullPageScreenShot) getAction(job *fileJob) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		var buffer []byte
+		err := takeFullPageScreenshot(f.quality, &buffer).Do(c)
+		if err != nil {
+			job.writeBytes(buffer, f.savePath)
+		}
+		return err
+	}
+}
+
+func takeElementScreenshot(
+	scale float64,
+	selector string,
+	buffer *[]byte) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		err := chromedp.WaitVisible(selector).Do(c)
+		if err != nil {
+			return err
+		}
+		err = chromedp.ScreenshotScale(selector, scale, buffer, chromedp.NodeVisible).Do(c)
+		if err != nil {
+			return err
+		}
+
+		return err
+	}
+}
+
+type elementScreenshot struct {
+	scale    float64
+	selector string
+	savePath string
+}
+
+func elemInitFromJson(jsonBytes []byte, sessionPath string) *elementScreenshot {
+	type body struct {
+		Scale          float64 `json:"scale"`
+		Name           string  `json:"name"`
+		Selector       string  `json:"selector"`
+		SnapShotFolder string  `json:"snapshot_name"`
+	}
+
+	bdy := &body{}
+
+	err := json.Unmarshal(jsonBytes, bdy)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	folderPath := createSnapshotFolder(sessionPath, bdy.SnapShotFolder)
+
+	return &elementScreenshot{
+		scale:    bdy.Scale,
+		selector: bdy.Selector,
+		savePath: folderPath,
+	}
+}
+
+func (e *elementScreenshot) validate() error {
+	if !strings.HasSuffix(e.savePath, ".jpg") {
+		return errors.New("name must end with .jpg")
+	}
+
+	if e.scale <= 0 {
+		return errors.New("scale must be greater than zero")
+	}
+
+	return nil
+}
+
+func (e *elementScreenshot) getAction(job *fileJob) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		var buffer []byte
+		err := takeElementScreenshot(e.scale, e.selector, &buffer).Do(c)
+		if err != nil {
+			job.writeBytes(buffer, e.savePath)
+		}
+		return err
+	}
+}
+
+type click struct {
+	selector  string
+	queryFunc func(s *chromedp.Selector)
+}
+
+// clickOnElement
+/*
+Instructs the chrome agent to click on a section of the webpage
+*/
+func clickOnElement(
+	selector string,
+	queryFunc func(s *chromedp.Selector)) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		err := chromedp.Click(selector, queryFunc).Do(c)
+		return err
+	}
+}
+
+func clickInitFromJson(jsonBytes []byte) *click {
+	bdy := &struct {
+		Selector  string `json:"selector"`
+		QueryType string `json:"query_type"`
+	}{}
+
+	err := json.Unmarshal(jsonBytes, bdy)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	c := click{
+		selector: bdy.Selector,
+	}
+
+	switch bdy.QueryType {
+	case "search":
+		c.queryFunc = chromedp.BySearch
+	default:
+		log.Fatalf("search type for click %v is not supported", bdy.QueryType)
+	}
+
+	return &c
+}
+
+func (c *click) validate() error {
+	if c.selector == "" {
+		return errors.New("click selector cannot be blank")
+	}
+
+	return nil
+}
+
+func (c *click) getAction(job *fileJob) chromedp.ActionFunc {
+	_ = job
+	return clickOnElement(c.selector, c.queryFunc)
+}
+
+type sleep struct {
+	ms uint64
+}
+
+func sleepForMs(ms uint64) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		err := chromedp.Sleep(time.Duration(ms) * time.Millisecond).Do(c)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		return err
+	}
+}
+
+func sleepInitFromJson(jsonBytes []byte) *sleep {
+	bdy := &struct {
+		Milliseconds uint64 `json:"ms"`
+	}{}
+
+	err := json.Unmarshal(jsonBytes, bdy)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return &sleep{
+		ms: bdy.Milliseconds,
+	}
+}
+
+func (s *sleep) validate() error {
+	return nil
+}
+
+func (s *sleep) getAction(job *fileJob) chromedp.ActionFunc {
+	_ = job
+	return sleepForMs(s.ms)
+}
+
+type html struct {
+	savePath string
+	selector string
+}
+
+func collectHtml(
+	selector string,
+	pString *string) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		err := chromedp.OuterHTML(selector, pString).Do(c)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		return err
+	}
+}
+
+func htmlInitFromJson(jsonBytes []byte, sessionPath string) *html {
+	type body struct {
+		SnapShotFolder string  `json:"snapshot_name"`
+		Selector       *string `json:"selector"`
+	}
+
+	bdy := &body{}
+
+	err := json.Unmarshal(jsonBytes, bdy)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if bdy.SnapShotFolder == "" {
+		log.Fatal(`html must be saved in a snapshot folder not name ""`)
+	}
+
+	savePath := createSnapshotFolder(sessionPath, bdy.SnapShotFolder)
+
+	filepath.Join(savePath, "html.txt")
+
+	var sel string
+
+	if bdy.Selector == nil {
+		sel = "html"
+	} else {
+		sel = *bdy.Selector
+	}
+
+	return &html{
+		savePath: savePath,
+		selector: sel,
+	}
+}
+
+func (h *html) validate() error {
+	return nil
+}
+
+func (h *html) getAction(job *fileJob) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		var text string
+		err := collectHtml(h.selector, &text).Do(c)
+		if err != nil {
+			job.writeBytes([]byte(text), h.savePath)
+		}
+		return err
+	}
+}
+
+type nodeCollect struct {
+	savePath      string
+	selector      string
+	prepopulate   bool
+	recurse       bool
+	collectStyles bool
+}
+
+func populatedNode(
+	selector string,
+	prepopulate bool,
+	recurse bool,
+	collectStyles bool,
+	styledNodeList *[]*nodeWithStyles) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		popSlice := make([]chromedp.PopulateOption, 0, 1)
+
+		// Add external node access to all file methods
+		// Add save request
+
+		if prepopulate {
+			popSlice = append(popSlice, chromedp.PopulateWait(1*time.Second))
+		}
+
+		var nodeSlice []*cdp.Node
+
+		err := chromedp.Nodes(
+			selector,
+			&nodeSlice,
+			chromedp.Populate(-1, true, popSlice...),
+		).Do(c)
+
+		if err != nil {
+			return err
+		}
+
+		if recurse {
+			nodeSlice = flattenNode(nodeSlice)
+		}
+
+		for index, node := range nodeSlice {
+
+			var cs []*css.ComputedStyleProperty
+			csErr := errors.New("failed")
+
+			if collectStyles {
+				cs, csErr = css.GetComputedStyleForNode(node.NodeID).Do(c)
+			}
+
+			styledNode := nodeWithStyles{
+				node: node,
+			}
+
+			if csErr == nil {
+				styledNode.cssStyles = cs
+			}
+
+			(*styledNodeList)[index] = &styledNode
+		}
+
+		return nil
+	}
+}
+
+func nodeInitFromJson(jsonBytes []byte, sessionPath string) *nodeCollect {
+	type body struct {
+		Selector       string `json:"selector"`
+		GetStyles      bool   `json:"get_styles"`
+		Prepopulate    bool   `json:"prepopulate"`
+		Recurse        bool   `json:"recurse"`
+		SnapShotFolder string `json:"snapshot_name"`
+	}
+
+	bdy := &body{}
+	err := json.Unmarshal(jsonBytes, bdy)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if bdy.SnapShotFolder == "" {
+		log.Fatal("collect node method received a empty snapshot directory")
+	}
+
+	snapPath := createSnapshotFolder(sessionPath, bdy.SnapShotFolder)
+	savePath := filepath.Join(snapPath, "nodes.json")
+
+	nc := nodeCollect{
+		selector:      bdy.Selector,
+		savePath:      savePath,
+		prepopulate:   bdy.Prepopulate,
+		recurse:       bdy.Recurse,
+		collectStyles: bdy.GetStyles,
+	}
+
+	return &nc
+}
+
+func (nc *nodeCollect) validate() error {
+	if nc.selector == "" {
+		return errors.New("selector is empty")
+	}
+
+	return nil
+}
+
+func (nc *nodeCollect) getAction(job *fileJob) chromedp.ActionFunc {
+	return func(c context.Context) error {
+		var nodeList []*nodeWithStyles
+		err := populatedNode(
+			nc.selector,
+			nc.prepopulate,
+			nc.recurse,
+			nc.collectStyles,
+			&nodeList).Do(c)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		byteSlice, err := json.Marshal(parseThroughNodes(nodeList))
+
+		if err != nil {
+			log.Fatal("could not convert nodes to json bytes")
+		}
+
+		job.writeBytes(byteSlice, nc.savePath)
+
+		return err
+	}
+}
+
+//func (b *Executor) AcquireLocation(snapshot string) {
+//	var loc string
+//
+//	b.appendTask(chromedp.ActionFunc(func(c context.Context) error {
+//		err := chromedp.Location(&loc).Do(c)
+//		if err != nil {
+//			return err
+//		}
+//		return err
+//	}))
+//
+//	b.locationMap[snapshot] = append(b.locationMap[snapshot], &loc)
+//}

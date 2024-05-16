@@ -4,6 +4,7 @@ import (
 	"agent/helper"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/css"
@@ -11,6 +12,7 @@ import (
 	"image"
 	"image/jpeg"
 	"log"
+	"path/filepath"
 	"time"
 )
 
@@ -227,206 +229,298 @@ func checkPageTransition(
 	return false
 }
 
-// writeImg
+// getImg
 /*
 saves the current image for writing
 */
-func writeImg(
-	snapshot string,
+func getImg(
 	imageQuality uint8,
-	ctx context.Context) (error, *imageMetaData) {
+	ctx context.Context) (error, []byte) {
 
-	var byteSlice []byte
+	var buffer []byte
 
-	imgMetaData := imageMetaData{
-		snapShotName: snapshot,
-		imageName:    "page_image.jpg",
-		byteData:     &byteSlice,
-	}
+	err := chromedp.Tasks{
+		takeFullPageScreenshot(imageQuality, &buffer),
+	}.Do(ctx)
 
-	err := chromedp.FullScreenshot(&byteSlice, int(imageQuality)).Do(ctx)
 	if err != nil {
 		return err, nil
 	}
 
-	return nil, &imgMetaData
+	return err, buffer
 }
 
-// writeHtml
+func writeImg(
+	savePath string,
+	job *fileJob,
+	buffer []byte) {
+
+	filePath := filepath.Join(savePath, "images", "fullPage.jpg")
+	job.writeBytes(buffer, filePath)
+}
+
+// getHtml
 /*
 saves the current html for writing
 */
-func writeHtml(ctx context.Context) (error, string) {
-	var html string
-	err := chromedp.OuterHTML("body", &html).Do(ctx)
+func getHtml(
+	ctx context.Context,
+) (error, string) {
+
+	var text string
+	err := collectHtml("body", &text).Do(ctx)
+
 	if err != nil {
 		return err, ""
 	}
 
-	return nil, html
+	return err, text
 }
 
-// saveSnapshot
+func writeHtml(
+	savePath,
+	text string,
+	job *fileJob) {
+	filePath := filepath.Join(savePath, "html.txt")
+	job.writeBytes([]byte(text), filePath)
+}
+
+// getNodes
 /*
 saves a snapshot with all the wanted files
 */
-func saveSnapshot(
-	htmlMap map[string]*string,
-	saveNode map[string]*[]*nodeWithStyles,
+func getNodes(
+	ctx context.Context) (error, []*nodeWithStyles) {
+
+	var nodeSlice []*nodeWithStyles
+
+	err := populatedNode(
+		"body",
+		true,
+		true,
+		true,
+		&nodeSlice).Do(ctx)
+
+	if err != nil {
+		log.Fatal("could not convert nodes to json bytes")
+	}
+
+	return err, nodeSlice
+}
+
+func writeNodes(
 	nodeSlice []*nodeWithStyles,
-	fullPageImgSlice *[]*imageMetaData,
-	imgMD *imageMetaData,
-	ctx context.Context,
-	snapshot string) error {
+	savePath string,
+	job *fileJob) {
 
-	if fullPageImgSlice != nil {
-		*fullPageImgSlice = append(*fullPageImgSlice, imgMD)
+	filePath := filepath.Join(savePath, "nodes.json")
+
+	byteSlice, err := json.Marshal(parseThroughNodes(nodeSlice))
+
+	if err != nil {
+		log.Fatal("could not convert nodes to json bytes")
 	}
 
-	if htmlMap != nil {
-		err, html := writeHtml(ctx)
-		if err != nil {
-			return err
-		}
-		htmlMap[snapshot] = &html
+	job.writeBytes(byteSlice, filePath)
+}
+
+type htmlIterator struct {
+	iterLimit        uint16
+	restTimeMs       uint32
+	startingSnapshot uint8
+	snapshotName     string
+	imageQuality     uint8
+	sessionPath      string
+	saveHtml         bool
+	saveNode         bool
+	saveImage        bool
+}
+
+func htmlIterInitFromJson(jsonBytes []byte, sessionPath string) *htmlIterator {
+	type body struct {
+		IterLimit         *uint16 `json:"iter_limit"`
+		PauseTime         *uint32 `json:"pause_time"`
+		StartingSnapshot  *uint8  `json:"starting_snapshot"`
+		SnapshotName      string  `json:"snapshot_name"`
+		SaveHtml          bool    `json:"save_html"`
+		SaveNode          bool    `json:"save_node"`
+		SaveFullPageImage bool    `json:"save_full_page_image"`
+		ImageQuality      *uint8  `json:"image_quality"`
 	}
 
-	if saveNode != nil {
-		saveNode[snapshot] = &nodeSlice
+	bdy := body{}
+	err := json.Unmarshal(jsonBytes, &bdy)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	iter := htmlIterator{
+		snapshotName: bdy.SnapshotName,
+		saveImage:    bdy.SaveHtml,
+		saveHtml:     bdy.SaveHtml,
+		saveNode:     bdy.SaveNode,
+	}
+
+	if bdy.IterLimit == nil {
+		iter.iterLimit = 10
+	} else {
+		iter.iterLimit = *bdy.IterLimit
+	}
+
+	if bdy.PauseTime == nil {
+		iter.restTimeMs = 1000
+	} else {
+		iter.restTimeMs = *bdy.PauseTime
+	}
+
+	if bdy.StartingSnapshot == nil {
+		iter.startingSnapshot = 0
+	} else {
+		iter.startingSnapshot = *bdy.StartingSnapshot
+	}
+
+	if bdy.ImageQuality == nil {
+		iter.imageQuality = 10
+	} else {
+		iter.imageQuality = *bdy.ImageQuality
+	}
+
+	iter.sessionPath = sessionPath
+
+	return &iter
+}
+
+func (h *htmlIterator) validate() error {
+	if h.snapshotName == "" {
+		log.Fatal("snapshot name for iter html cannot be blank")
 	}
 
 	return nil
 }
 
-/**
-TODO In order of priority
-2) add code to click and screenshot all elements
-3) add check limit
-3) unit test
-5) speed up the iterator action
-*/
-
 // htmlIteratorAction
 /*
 collects all unique transition snapshots
 */
-func htmlIteratorAction(
-	iterLimit uint16,
-	pauseTime uint32,
-	startingSnapshot uint8,
-	snapshotName string,
-	imageQuality uint8,
-	htmlMap map[string]*string,
-	saveNode map[string]*[]*nodeWithStyles,
-	fullPageImgSlice *[]*imageMetaData,
-) chromedp.Tasks {
+func (h *htmlIterator) getAction(job *fileJob) chromedp.ActionFunc {
+	return func(c context.Context) error {
 
-	return chromedp.Tasks{
-		chromedp.ActionFunc(func(c context.Context) error {
+		startTime := time.Now()
+		var pByteCollection []*[]byte
+		//nodeSlice := make([]*nodeWithStyles, 0, 10)
 
-			startTime := time.Now()
-			var pByteCollection []*[]byte
-			nodeSlice := make([]*nodeWithStyles, 0, 10)
+		err := chromedp.Sleep(time.Second * 5).Do(c) //wait for website to settle down
+		if err != nil {
+			return err
+		}
 
-			err := chromedp.Sleep(time.Second * 5).Do(c) //wait for website to settle down
-			if err != nil {
+		// save initial snapshot
+		currentTime := time.Now()
+		diff := currentTime.Sub(startTime)
+		snapshot := fmt.Sprintf(
+			"%s_%d_%d_ms", h.snapshotName, h.startingSnapshot, diff.Milliseconds(),
+		)
+
+		writePath := filepath.Join(h.sessionPath, snapshot)
+		err, imgByte := getImg(h.imageQuality, c)
+
+		if err == nil && h.saveImage {
+			writeImg(writePath, job, imgByte)
+		} else {
+			return err
+		}
+
+		err, nodeSlice := getNodes(c)
+		if err == nil && h.saveNode {
+			writeNodes(nodeSlice, writePath, job)
+		} else {
+			return err
+		}
+
+		if h.saveHtml {
+			if err, text := getHtml(c); err != nil {
 				return err
+			} else {
+				writeHtml(writePath, text, job)
 			}
+		}
 
-			// save initial snapshot
-			currentTime := time.Now()
-			diff := currentTime.Sub(startTime)
-			snapshot := fmt.Sprintf(
-				"%s_%d_%d_ms", snapshotName, startingSnapshot, diff.Milliseconds(),
+		pByteCollection = append(pByteCollection, &imgByte)
+
+		nodeMap := nodeToMap(nodeSlice)
+
+		ticker := time.NewTicker(time.Duration(h.restTimeMs) * time.Millisecond)
+
+		hitLimit := 10 //program will only return after consecutively not having a unique transition this many times
+		hitCount := 0
+		count := uint16(0)
+
+		for range ticker.C {
+			count++
+			h.startingSnapshot++
+
+			currentTime = time.Now()
+			diff = currentTime.Sub(startTime)
+			snapshot = fmt.Sprintf(
+				"%s_%d_%d_ms", h.snapshotName, h.startingSnapshot, diff.Milliseconds(),
 			)
-			err, imgMD := writeImg(snapshot, imageQuality, c)
-			pByteCollection = append(pByteCollection, imgMD.byteData)
-			if err != nil {
-				return err
-			}
-			err = populatedNodeAction("body", true, true, &nodeSlice).Do(c)
-			if err != nil {
-				return err
-			}
-			err = saveSnapshot(
-				htmlMap,
-				saveNode,
-				nodeSlice,
-				fullPageImgSlice,
-				imgMD,
-				c,
-				snapshot)
+
+			writePath = filepath.Join(h.sessionPath, snapshot)
+
+			err, imgBytes := getImg(h.imageQuality, c)
 			if err != nil {
 				return err
 			}
 
-			nodeMap := nodeToMap(nodeSlice)
+			pByteCollection = append(pByteCollection, &imgBytes)
 
-			ticker := time.NewTicker(time.Duration(pauseTime) * time.Millisecond)
+			err, currentNodeStyles := getNodes(c)
+			if err != nil {
+				return err
+			}
 
-			hitLimit := 10 //program will only return after consecutively not having a unique transition this many times
-			hitCount := 0
-			count := uint16(0)
+			currentNodeMap := nodeToMap(currentNodeStyles)
+			nodeMap = mergeNodeMap(currentNodeMap, nodeMap)
 
-			for range ticker.C {
-				count++
-				startingSnapshot++
+			if err != nil {
+				return err
+			}
 
-				currentTime = time.Now()
-				diff = currentTime.Sub(startTime)
-				snapshot = fmt.Sprintf(
-					"%s_%d_%d_ms", snapshotName, startingSnapshot, diff.Milliseconds(),
-				)
-				err, imgMD = writeImg(snapshot, imageQuality, c)
-				if err != nil {
-					return err
-				}
-				pByteCollection = append(pByteCollection, imgMD.byteData)
-				currentNodeSlice := make([]*nodeWithStyles, 0, 10)
-				err = populatedNodeAction("body", true, true, &currentNodeSlice).Do(c)
-				if err != nil {
-					return err
+			// check whether the page has transitioned
+			if checkPageTransition(nodeMap, pByteCollection) {
+
+				hitCount = 0
+
+				if h.saveNode {
+					writeNodes(currentNodeStyles, writePath, job)
 				}
 
-				currentNodeMap := nodeToMap(currentNodeSlice)
-				nodeMap = mergeNodeMap(currentNodeMap, nodeMap)
-
-				if err != nil {
-					return err
+				if h.saveImage {
+					writeImg(writePath, job, imgBytes)
 				}
 
-				// check whether the page has transitioned
-				if checkPageTransition(nodeMap, pByteCollection) {
-
-					hitCount = 0
-
-					err = saveSnapshot(
-						htmlMap,
-						saveNode,
-						currentNodeSlice,
-						fullPageImgSlice,
-						imgMD,
-						c,
-						snapshot)
-
-					if err != nil {
+				if h.saveHtml {
+					if err, text := getHtml(c); err == nil {
+						writeHtml(writePath, text, job)
+					} else {
 						return err
 					}
-
-				} else {
-					// if page has not transitioned exit if hits has been hit
-					hitCount++
-					if hitCount == hitLimit {
-						return nil
-					}
 				}
 
-				if count == iterLimit {
+			} else {
+				// if page has not transitioned exit if hits has been hit
+				hitCount++
+				if hitCount == hitLimit {
 					return nil
 				}
 			}
 
-			return nil
-		}),
+			if count == h.iterLimit {
+				return nil
+			}
+		}
+
+		return nil
 	}
 }
