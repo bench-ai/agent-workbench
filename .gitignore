@@ -2,6 +2,7 @@ agent
 .idea/
 config.json
 config2.json
+config3.json
 resources
 .DS_Store
 resources1

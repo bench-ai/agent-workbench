@@ -20,6 +20,10 @@ type fileJob struct {
 	wg sync.WaitGroup
 }
 
+func initFileJob() *fileJob {
+	return &fileJob{c: make(chan error)}
+}
+
 func (f *fileJob) writeBytes(byteSlice []byte, writePath string) {
 	f.wg.Add(1)
 	go func() {
@@ -58,7 +62,7 @@ func parseThroughNodes(nodeSlice []*nodeWithStyles) []nodeMetaData {
 			attrMap[nodeMd.node.Attributes[i]] += nodeMd.node.Attributes[i+1]
 		}
 
-		var cssMap []map[string]string
+		cssMap := make([]map[string]string, 0)
 
 		for _, cascade := range nodeMd.cssStyles {
 			tempMap := map[string]string{
@@ -88,7 +92,7 @@ type nodeMetaData struct {
 	Type       string              `json:"type"`
 	Xpath      string              `json:"xpath"`
 	Attributes map[string]string   `json:"attributes"`
-	CssStyles  []map[string]string `json:"css_styles,omitempty"`
+	CssStyles  []map[string]string `json:"css_styles"`
 }
 
 type nodeWithStyles struct {
@@ -175,8 +179,10 @@ func fpsInitFromJson(jsonBytes []byte, sessionPath string) *fullPageScreenShot {
 
 	folderPath := createSnapshotFolder(sessionPath, bdy.SnapShotFolder)
 
+	fp := filepath.Join(folderPath, "images", bdy.Name)
+
 	fullPage := fullPageScreenShot{
-		savePath: folderPath,
+		savePath: fp,
 		quality:  bdy.Quality,
 	}
 
@@ -199,7 +205,7 @@ func (f *fullPageScreenShot) getAction(job *fileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		var buffer []byte
 		err := takeFullPageScreenshot(f.quality, &buffer).Do(c)
-		if err != nil {
+		if err == nil {
 			job.writeBytes(buffer, f.savePath)
 		}
 		return err
@@ -248,6 +254,8 @@ func elemInitFromJson(jsonBytes []byte, sessionPath string) *elementScreenshot {
 
 	folderPath := createSnapshotFolder(sessionPath, bdy.SnapShotFolder)
 
+	folderPath = filepath.Join(folderPath, "images", bdy.Name)
+
 	return &elementScreenshot{
 		scale:    bdy.Scale,
 		selector: bdy.Selector,
@@ -271,7 +279,7 @@ func (e *elementScreenshot) getAction(job *fileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		var buffer []byte
 		err := takeElementScreenshot(e.scale, e.selector, &buffer).Do(c)
-		if err != nil {
+		if err == nil {
 			job.writeBytes(buffer, e.savePath)
 		}
 		return err
@@ -412,8 +420,7 @@ func htmlInitFromJson(jsonBytes []byte, sessionPath string) *html {
 	}
 
 	savePath := createSnapshotFolder(sessionPath, bdy.SnapShotFolder)
-
-	filepath.Join(savePath, "html.txt")
+	savePath = filepath.Join(savePath, "html.txt")
 
 	var sel string
 
@@ -437,7 +444,7 @@ func (h *html) getAction(job *fileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		var text string
 		err := collectHtml(h.selector, &text).Do(c)
-		if err != nil {
+		if err == nil {
 			job.writeBytes([]byte(text), h.savePath)
 		}
 		return err
@@ -484,7 +491,7 @@ func populatedNode(
 			nodeSlice = flattenNode(nodeSlice)
 		}
 
-		for index, node := range nodeSlice {
+		for _, node := range nodeSlice {
 
 			var cs []*css.ComputedStyleProperty
 			csErr := errors.New("failed")
@@ -501,7 +508,7 @@ func populatedNode(
 				styledNode.cssStyles = cs
 			}
 
-			(*styledNodeList)[index] = &styledNode
+			*styledNodeList = append(*styledNodeList, &styledNode)
 		}
 
 		return nil

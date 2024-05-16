@@ -2,7 +2,7 @@ package main
 
 import (
 	"agent/chrome"
-	"agent/command/llm"
+	"agent/llm"
 	"encoding/json"
 	"errors"
 	"flag"

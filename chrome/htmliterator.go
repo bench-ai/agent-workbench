@@ -357,7 +357,7 @@ func htmlIterInitFromJson(jsonBytes []byte, sessionPath string) *htmlIterator {
 
 	iter := htmlIterator{
 		snapshotName: bdy.SnapshotName,
-		saveImage:    bdy.SaveHtml,
+		saveImage:    bdy.SaveFullPageImage,
 		saveHtml:     bdy.SaveHtml,
 		saveNode:     bdy.SaveNode,
 	}
@@ -422,18 +422,22 @@ func (h *htmlIterator) getAction(job *fileJob) chromedp.ActionFunc {
 			"%s_%d_%d_ms", h.snapshotName, h.startingSnapshot, diff.Milliseconds(),
 		)
 
-		writePath := filepath.Join(h.sessionPath, snapshot)
+		writePath := createSnapshotFolder(h.sessionPath, snapshot)
 		err, imgByte := getImg(h.imageQuality, c)
 
-		if err == nil && h.saveImage {
-			writeImg(writePath, job, imgByte)
+		if err == nil {
+			if h.saveImage {
+				writeImg(writePath, job, imgByte)
+			}
 		} else {
 			return err
 		}
 
 		err, nodeSlice := getNodes(c)
-		if err == nil && h.saveNode {
-			writeNodes(nodeSlice, writePath, job)
+		if err == nil {
+			if h.saveNode {
+				writeNodes(nodeSlice, writePath, job)
+			}
 		} else {
 			return err
 		}
@@ -466,8 +470,6 @@ func (h *htmlIterator) getAction(job *fileJob) chromedp.ActionFunc {
 				"%s_%d_%d_ms", h.snapshotName, h.startingSnapshot, diff.Milliseconds(),
 			)
 
-			writePath = filepath.Join(h.sessionPath, snapshot)
-
 			err, imgBytes := getImg(h.imageQuality, c)
 			if err != nil {
 				return err
@@ -489,6 +491,7 @@ func (h *htmlIterator) getAction(job *fileJob) chromedp.ActionFunc {
 
 			// check whether the page has transitioned
 			if checkPageTransition(nodeMap, pByteCollection) {
+				writePath = createSnapshotFolder(h.sessionPath, snapshot)
 
 				hitCount = 0
 

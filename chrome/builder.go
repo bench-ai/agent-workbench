@@ -22,7 +22,7 @@ func addOperation(
 	paramBytes, err := json.Marshal(params)
 
 	if err != nil {
-		log.Fatal("failed to marshall browser command")
+		log.Fatal("failed to marshall browser llm")
 	}
 
 	var browserParams browserCommand
@@ -45,7 +45,7 @@ func addOperation(
 	case "iterate_html":
 		browserParams = htmlIterInitFromJson(paramBytes, sessionPath)
 	default:
-		log.Fatalf("%s is not a supported browser command \n", commandName)
+		log.Fatalf("%s is not a supported browser llm \n", commandName)
 	}
 
 	if err := browserParams.validate(); err != nil {
@@ -61,11 +61,11 @@ func runTasks(
 	sessionPath string,
 	ctx context.Context) {
 
-	job := fileJob{}
+	job := initFileJob()
 	tsk := make(chromedp.Tasks, len(commandNameSlice))
 
 	for index, cName := range commandNameSlice {
-		tsk[index] = addOperation(paramSlice[index], cName, sessionPath, &job)
+		tsk[index] = addOperation(paramSlice[index], cName, sessionPath, job)
 	}
 
 	err := chromedp.Run(ctx, tsk)
@@ -93,7 +93,6 @@ func RunSequentialCommands(
 	paramSlice []map[string]interface{},
 	commandNameSlice []string,
 ) {
-
 	var ctx context.Context
 	var cancel context.CancelFunc
 
