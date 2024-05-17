@@ -15,16 +15,20 @@ import (
 	"time"
 )
 
-type fileJob struct {
+type FileJob struct {
 	c  chan error
 	wg sync.WaitGroup
 }
 
-func initFileJob() *fileJob {
-	return &fileJob{c: make(chan error)}
+func (f *FileJob) GetChannel() chan error {
+	return f.c
 }
 
-func (f *fileJob) writeBytes(byteSlice []byte, writePath string) {
+func InitFileJob() *FileJob {
+	return &FileJob{c: make(chan error)}
+}
+
+func (f *FileJob) writeBytes(byteSlice []byte, writePath string) {
 	f.wg.Add(1)
 	go func() {
 		defer f.wg.Done()
@@ -34,7 +38,7 @@ func (f *fileJob) writeBytes(byteSlice []byte, writePath string) {
 
 type browserCommand interface {
 	validate() error
-	getAction(job *fileJob) chromedp.ActionFunc
+	getAction(job *FileJob) chromedp.ActionFunc
 }
 
 func createSnapshotFolder(savePath, snapshot string) string {
@@ -139,7 +143,7 @@ func navInitFromJson(jsonBytes []byte) *navigateWebPage {
 	}
 }
 
-func (n *navigateWebPage) getAction(job *fileJob) chromedp.ActionFunc {
+func (n *navigateWebPage) getAction(job *FileJob) chromedp.ActionFunc {
 	_ = job
 	return navigateToUrl(n.url)
 }
@@ -201,7 +205,7 @@ func (f *fullPageScreenShot) validate() error {
 	return nil
 }
 
-func (f *fullPageScreenShot) getAction(job *fileJob) chromedp.ActionFunc {
+func (f *fullPageScreenShot) getAction(job *FileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		var buffer []byte
 		err := takeFullPageScreenshot(f.quality, &buffer).Do(c)
@@ -275,7 +279,7 @@ func (e *elementScreenshot) validate() error {
 	return nil
 }
 
-func (e *elementScreenshot) getAction(job *fileJob) chromedp.ActionFunc {
+func (e *elementScreenshot) getAction(job *FileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		var buffer []byte
 		err := takeElementScreenshot(e.scale, e.selector, &buffer).Do(c)
@@ -338,7 +342,7 @@ func (c *click) validate() error {
 	return nil
 }
 
-func (c *click) getAction(job *fileJob) chromedp.ActionFunc {
+func (c *click) getAction(job *FileJob) chromedp.ActionFunc {
 	_ = job
 	return clickOnElement(c.selector, c.queryFunc)
 }
@@ -378,7 +382,7 @@ func (s *sleep) validate() error {
 	return nil
 }
 
-func (s *sleep) getAction(job *fileJob) chromedp.ActionFunc {
+func (s *sleep) getAction(job *FileJob) chromedp.ActionFunc {
 	_ = job
 	return sleepForMs(s.ms)
 }
@@ -440,7 +444,7 @@ func (h *html) validate() error {
 	return nil
 }
 
-func (h *html) getAction(job *fileJob) chromedp.ActionFunc {
+func (h *html) getAction(job *FileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		var text string
 		err := collectHtml(h.selector, &text).Do(c)
@@ -557,7 +561,7 @@ func (nc *nodeCollect) validate() error {
 	return nil
 }
 
-func (nc *nodeCollect) getAction(job *fileJob) chromedp.ActionFunc {
+func (nc *nodeCollect) getAction(job *FileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		var nodeList []*nodeWithStyles
 		err := populatedNode(

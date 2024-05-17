@@ -1,18 +1,19 @@
 package main
 
 import (
+	"agent/chrome"
 	"agent/helper"
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/chromedp/chromedp"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
-
-type liveCommand struct {
-}
 
 func collectCommandFiles(sessionPath string, completedCommands helper.Set[string]) []string {
 
@@ -38,10 +39,15 @@ func collectCommandFiles(sessionPath string, completedCommands helper.Set[string
 				log.Fatal(err)
 			}
 
-			if !completedCommands.Has(el.Name()) {
+			if !completedCommands.Has(filepath.Join(pth, el.Name())) && strings.HasSuffix(el.Name(), ".json") {
+
+				if !strings.HasSuffix(el.Name(), ".json") {
+					log.Fatal("command is not a json file")
+				}
+
 				newCommands = append(newCommands, fileCommand{
 					modTime:  info.ModTime(),
-					filename: el.Name(),
+					filename: filepath.Join(pth, el.Name()),
 				})
 			}
 		}
@@ -60,11 +66,170 @@ func collectCommandFiles(sessionPath string, completedCommands helper.Set[string
 	return retCommands
 }
 
-func getLiveSession(sessionPath string) chromedp.ActionFunc {
+func performAction(
+	ctx context.Context,
+	action chromedp.Action,
+	job *chrome.FileJob,
+	commandDurationMs *uint64,
+) error {
+
+	newCtx := context.Background()
+	if commandDurationMs != nil {
+		var cancelFunc context.CancelFunc
+		dur := time.Millisecond * time.Duration(*commandDurationMs)
+		newCtx, cancelFunc = context.WithTimeout(newCtx, dur)
+		defer cancelFunc()
+	}
+
+	errChan := make(chan error)
+
+	go func() {
+		err := action.Do(ctx)
+		errChan <- err
+	}()
+
+	select {
+	case resp := <-errChan:
+		if resp != nil {
+			return resp
+		}
+	case <-newCtx.Done():
+		return context.DeadlineExceeded
+	}
+
+	return <-job.GetChannel()
+}
+
+func writeErr(writePath string, err error) error {
+	writeBytes := []byte(err.Error())
+	writePath = filepath.Join(writePath, "err.txt")
+	err = os.WriteFile(writePath, writeBytes, 0777)
+	return err
+}
+
+func processOperations(
+	filePath string,
+	ctx context.Context,
+	sessionPath string,
+	job *chrome.FileJob,
+	waitTime *uint64) error {
+
+	byteSlice, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	_, fname := filepath.Split(filePath)
+	nameWoExt := strings.Split(fname, ".")[0]
+
+	filePath = filepath.Join(sessionPath, "responses", nameWoExt)
+
+	if err = os.Mkdir(filePath, 0777); err != nil {
+		log.Fatal(err)
+	}
+
+	op := &Operation{}
+
+	err = json.Unmarshal(byteSlice, op)
+	if err != nil {
+		fmt.Println(len(byteSlice))
+		fmt.Println(string(byteSlice))
+		fmt.Println(err)
+		return err
+	}
+
+	var responseErr error
+
+	switch op.Type {
+	case "browser":
+		lastCommand := op.CommandList[len(op.CommandList)-1]
+		action := chrome.AddOperation(lastCommand.Params, lastCommand.CommandName, filePath, job)
+		responseErr = performAction(ctx, action, job, waitTime)
+	}
+
+	if responseErr != nil {
+		err := writeErr(filePath, responseErr)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func getLiveSession(
+	sessionPath string,
+	job *chrome.FileJob,
+	waitTime *uint64) chromedp.ActionFunc {
 	return func(c context.Context) error {
-		var commandSet helper.Set[string]
-		commandSlice := collectCommandFiles(sessionPath, commandSet)
+		commandSet := helper.Set[string]{}
+		alive := true
+
+		go func() {
+			<-c.Done()
+			alive = false
+		}()
+
+		for alive {
+			commandSlice := collectCommandFiles(sessionPath, commandSet)
+
+			for _, commandFileName := range commandSlice {
+				err := processOperations(commandFileName, c, sessionPath, job, waitTime)
+
+				if err != nil {
+					alive = false
+				}
+
+				commandSet.Insert(commandFileName)
+			}
+		}
 
 		return nil
 	}
+}
+
+func createLiveFolders(sessionPath string) {
+	commandPath := filepath.Join(sessionPath, "commands")
+	responsePath := filepath.Join(sessionPath, "responses")
+	if err := os.MkdirAll(commandPath, 0777); !os.IsExist(err) && err != nil {
+		log.Fatal("Could not create directory: " + commandPath)
+	}
+
+	if err := os.MkdirAll(responsePath, 0777); !os.IsExist(err) && err != nil {
+		log.Fatal("Could not create directory: " + responsePath)
+	}
+}
+
+func RunLive(timeout uint64, headless bool, commandRunTime *uint64, sessionPath string) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	createLiveFolders(sessionPath)
+	job := chrome.InitFileJob()
+
+	if headless {
+		ctx, _ = chromedp.NewContext(
+			context.Background(),
+		)
+	} else {
+		actx, _ := chromedp.NewExecAllocator(
+			context.Background(),
+			append(
+				chromedp.DefaultExecAllocatorOptions[:],
+				chromedp.Flag("headless", false))...)
+
+		ctx, _ = chromedp.NewContext(
+			actx,
+		)
+	}
+
+	ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	tasks := chromedp.Tasks{
+		getLiveSession(sessionPath, job, commandRunTime),
+	}
+
+	_ = chromedp.Run(ctx, tasks)
 }
