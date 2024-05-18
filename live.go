@@ -5,6 +5,7 @@ import (
 	"agent/helper"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/chromedp/chromedp"
 	"log"
@@ -33,16 +34,13 @@ func collectCommandFiles(sessionPath string, completedCommands helper.Set[string
 
 	for _, el := range dirSlice {
 		if !el.IsDir() {
-			info, err := el.Info()
-
-			if err != nil {
-				log.Fatal(err)
-			}
 
 			if !completedCommands.Has(filepath.Join(pth, el.Name())) && strings.HasSuffix(el.Name(), ".json") {
 
-				if !strings.HasSuffix(el.Name(), ".json") {
-					log.Fatal("command is not a json file")
+				info, err := el.Info()
+
+				if err != nil {
+					log.Fatal(err)
 				}
 
 				newCommands = append(newCommands, fileCommand{
@@ -91,13 +89,23 @@ func performAction(
 	select {
 	case resp := <-errChan:
 		if resp != nil {
+			fmt.Println(resp)
 			return resp
 		}
 	case <-newCtx.Done():
-		return context.DeadlineExceeded
+		return errors.New("command context deadline exceeded")
 	}
 
-	return <-job.GetChannel()
+	go func() {
+		job.GetWaitGroup().Wait()
+		close(job.GetChannel())
+	}()
+
+	var err error
+
+	for err = range job.GetChannel() {
+	}
+	return err
 }
 
 func writeErr(writePath string, err error) error {
@@ -111,7 +119,6 @@ func processOperations(
 	filePath string,
 	ctx context.Context,
 	sessionPath string,
-	job *chrome.FileJob,
 	waitTime *uint64) error {
 
 	byteSlice, err := os.ReadFile(filePath)
@@ -138,6 +145,8 @@ func processOperations(
 		return err
 	}
 
+	job := chrome.InitFileJob()
+
 	var responseErr error
 
 	switch op.Type {
@@ -160,7 +169,6 @@ func processOperations(
 
 func getLiveSession(
 	sessionPath string,
-	job *chrome.FileJob,
 	waitTime *uint64) chromedp.ActionFunc {
 	return func(c context.Context) error {
 		commandSet := helper.Set[string]{}
@@ -175,7 +183,7 @@ func getLiveSession(
 			commandSlice := collectCommandFiles(sessionPath, commandSet)
 
 			for _, commandFileName := range commandSlice {
-				err := processOperations(commandFileName, c, sessionPath, job, waitTime)
+				err := processOperations(commandFileName, c, sessionPath, waitTime)
 
 				if err != nil {
 					alive = false
@@ -206,7 +214,6 @@ func RunLive(timeout uint64, headless bool, commandRunTime *uint64, sessionPath 
 	var cancel context.CancelFunc
 
 	createLiveFolders(sessionPath)
-	job := chrome.InitFileJob()
 
 	if headless {
 		ctx, _ = chromedp.NewContext(
@@ -228,7 +235,7 @@ func RunLive(timeout uint64, headless bool, commandRunTime *uint64, sessionPath 
 	defer cancel()
 
 	tasks := chromedp.Tasks{
-		getLiveSession(sessionPath, job, commandRunTime),
+		getLiveSession(sessionPath, commandRunTime),
 	}
 
 	_ = chromedp.Run(ctx, tasks)

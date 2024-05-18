@@ -24,6 +24,10 @@ func (f *FileJob) GetChannel() chan error {
 	return f.c
 }
 
+func (f *FileJob) GetWaitGroup() *sync.WaitGroup {
+	return &f.wg
+}
+
 func InitFileJob() *FileJob {
 	return &FileJob{c: make(chan error)}
 }
