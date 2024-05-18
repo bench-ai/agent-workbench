@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/chromedp/chromedp"
 	"log"
 	"os"
@@ -16,13 +15,13 @@ import (
 	"time"
 )
 
-func collectCommandFiles(sessionPath string, completedCommands helper.Set[string]) []string {
+func collectCommandFiles(sessionPath string, completedCommands helper.Set[string]) ([]string, error) {
 
 	pth := filepath.Join(sessionPath, "commands")
 	dirSlice, err := os.ReadDir(pth)
 
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	type fileCommand struct {
@@ -40,7 +39,7 @@ func collectCommandFiles(sessionPath string, completedCommands helper.Set[string
 				info, err := el.Info()
 
 				if err != nil {
-					log.Fatal(err)
+					return nil, err
 				}
 
 				newCommands = append(newCommands, fileCommand{
@@ -61,7 +60,7 @@ func collectCommandFiles(sessionPath string, completedCommands helper.Set[string
 		retCommands[index] = com.filename
 	}
 
-	return retCommands
+	return retCommands, nil
 }
 
 func performAction(
@@ -89,7 +88,6 @@ func performAction(
 	select {
 	case resp := <-errChan:
 		if resp != nil {
-			fmt.Println(resp)
 			return resp
 		}
 	case <-newCtx.Done():
@@ -115,6 +113,12 @@ func writeErr(writePath string, err error) error {
 	return err
 }
 
+func endSession(sessionPath string, exitErr error) error {
+	exitPath := filepath.Join(sessionPath, "exit.txt")
+	err := os.WriteFile(exitPath, []byte(exitErr.Error()), 0777)
+	return err
+}
+
 func processOperations(
 	filePath string,
 	ctx context.Context,
@@ -132,16 +136,13 @@ func processOperations(
 	filePath = filepath.Join(sessionPath, "responses", nameWoExt)
 
 	if err = os.Mkdir(filePath, 0777); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	op := &Operation{}
 
 	err = json.Unmarshal(byteSlice, op)
 	if err != nil {
-		fmt.Println(len(byteSlice))
-		fmt.Println(string(byteSlice))
-		fmt.Println(err)
 		return err
 	}
 
@@ -154,11 +155,12 @@ func processOperations(
 		lastCommand := op.CommandList[len(op.CommandList)-1]
 		action := chrome.AddOperation(lastCommand.Params, lastCommand.CommandName, filePath, job)
 		responseErr = performAction(ctx, action, job, waitTime)
+	case "exit":
+		return errors.New("session has manually exited")
 	}
 
 	if responseErr != nil {
 		err := writeErr(filePath, responseErr)
-
 		if err != nil {
 			return err
 		}
@@ -174,26 +176,33 @@ func getLiveSession(
 		commandSet := helper.Set[string]{}
 		alive := true
 
+		var exitErr error
+
 		go func() {
 			<-c.Done()
+			exitErr = context.DeadlineExceeded
 			alive = false
 		}()
 
 		for alive {
-			commandSlice := collectCommandFiles(sessionPath, commandSet)
+			if commandSlice, err := collectCommandFiles(sessionPath, commandSet); err == nil {
+				for _, commandFileName := range commandSlice {
+					exitErr = processOperations(commandFileName, c, sessionPath, waitTime)
 
-			for _, commandFileName := range commandSlice {
-				err := processOperations(commandFileName, c, sessionPath, waitTime)
+					if exitErr != nil {
+						alive = false
+					}
 
-				if err != nil {
-					alive = false
+					commandSet.Insert(commandFileName)
 				}
-
-				commandSet.Insert(commandFileName)
+			} else {
+				alive = false
+				exitErr = err
 			}
 		}
 
-		return nil
+		err := endSession(sessionPath, exitErr)
+		return err
 	}
 }
 
@@ -238,5 +247,7 @@ func RunLive(timeout uint64, headless bool, commandRunTime *uint64, sessionPath 
 		getLiveSession(sessionPath, commandRunTime),
 	}
 
-	_ = chromedp.Run(ctx, tasks)
+	err := chromedp.Run(ctx, tasks)
+
+	log.Fatal(err)
 }
