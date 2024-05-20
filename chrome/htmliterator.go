@@ -252,7 +252,7 @@ func getImg(
 
 func writeImg(
 	savePath string,
-	job *fileJob,
+	job *FileJob,
 	buffer []byte) {
 
 	filePath := filepath.Join(savePath, "images", "fullPage.jpg")
@@ -280,7 +280,7 @@ func getHtml(
 func writeHtml(
 	savePath,
 	text string,
-	job *fileJob) {
+	job *FileJob) {
 	filePath := filepath.Join(savePath, "html.txt")
 	job.writeBytes([]byte(text), filePath)
 }
@@ -311,7 +311,7 @@ func getNodes(
 func writeNodes(
 	nodeSlice []*nodeWithStyles,
 	savePath string,
-	job *fileJob) {
+	job *FileJob) {
 
 	filePath := filepath.Join(savePath, "nodes.json")
 
@@ -403,7 +403,7 @@ func (h *htmlIterator) validate() error {
 /*
 collects all unique transition snapshots
 */
-func (h *htmlIterator) getAction(job *fileJob) chromedp.ActionFunc {
+func (h *htmlIterator) getAction(job *FileJob) chromedp.ActionFunc {
 	return func(c context.Context) error {
 
 		startTime := time.Now()

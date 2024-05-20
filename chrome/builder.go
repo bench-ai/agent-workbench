@@ -17,7 +17,7 @@ func AddOperation(
 	params map[string]interface{},
 	commandName string,
 	sessionPath string,
-	job *fileJob) chromedp.Action {
+	job *FileJob) chromedp.Action {
 
 	paramBytes, err := json.Marshal(params)
 
@@ -61,7 +61,7 @@ func runTasks(
 	sessionPath string,
 	ctx context.Context) {
 
-	job := initFileJob()
+	job := InitFileJob()
 	tsk := make(chromedp.Tasks, len(commandNameSlice))
 
 	for index, cName := range commandNameSlice {
