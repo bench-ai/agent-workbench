@@ -113,6 +113,13 @@ func writeErr(writePath string, err error) error {
 	return err
 }
 
+func writeSuccess(writePath string) error {
+	var writeBytes []byte
+	writePath = filepath.Join(writePath, "success.txt")
+	err := os.WriteFile(writePath, writeBytes, 0777)
+	return err
+}
+
 func endSession(sessionPath string, exitErr error) error {
 	exitPath := filepath.Join(sessionPath, "exit.txt")
 	err := os.WriteFile(exitPath, []byte(exitErr.Error()), 0777)
@@ -150,20 +157,37 @@ func processOperations(
 
 	var responseErr error
 
+	/**
+	TODO: LLM operations, integrate tool calls, it should be able to extract info from the repsonse json
+	add task for post processing loading
+	*/
+
 	switch op.Type {
 	case "browser":
 		lastCommand := op.CommandList[len(op.CommandList)-1]
 		action := chrome.AddOperation(lastCommand.Params, lastCommand.CommandName, filePath, job)
 		responseErr = performAction(ctx, action, job, waitTime)
+	case "llm":
+		//waitSeconds := *waitTime / 1000
+		if *waitTime > 32767 {
+			return errors.New("command wait time exceeds limit for LLM'S the limit is 32767 seconds")
+		}
+
+		llmWaitTime := int16(*waitTime)
+		op.Settings.Timeout = &llmWaitTime
+		responseErr = runLlmCommands(op.Settings, op.CommandList, filePath)
 	case "exit":
 		return errors.New("session has manually exited")
 	}
 
 	if responseErr != nil {
-		err := writeErr(filePath, responseErr)
-		if err != nil {
-			return err
-		}
+		err = writeErr(filePath, responseErr)
+	} else {
+		err = writeSuccess(filePath)
+	}
+
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -180,7 +204,6 @@ func getLiveSession(
 
 		go func() {
 			<-c.Done()
-			exitErr = context.DeadlineExceeded
 			alive = false
 		}()
 
@@ -199,6 +222,10 @@ func getLiveSession(
 				alive = false
 				exitErr = err
 			}
+		}
+
+		if exitErr == nil {
+			exitErr = context.DeadlineExceeded
 		}
 
 		err := endSession(sessionPath, exitErr)
@@ -249,5 +276,7 @@ func RunLive(timeout uint64, headless bool, commandRunTime *uint64, sessionPath 
 
 	err := chromedp.Run(ctx, tasks)
 
-	log.Fatal(err)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

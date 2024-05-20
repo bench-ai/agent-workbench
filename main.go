@@ -86,7 +86,7 @@ func runBrowserCommands(settings Settings, commandList []Command, sessionPath st
 }
 
 // create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
-func runLlmCommands(settings Settings, commandList []Command, sessionPath string) {
+func runLlmCommands(settings Settings, commandList []Command, sessionPath string) error {
 
 	messageTypeSlice := make([]string, len(commandList))
 	messageSlice := make([]map[string]interface{}, len(commandList))
@@ -108,7 +108,7 @@ func runLlmCommands(settings Settings, commandList []Command, sessionPath string
 		settings.Timeout)
 
 	if err != nil {
-		log.Fatalf("could not execute command %v", err)
+		return err
 	}
 
 	for _, sett := range settings.LLMSettings {
@@ -136,14 +136,16 @@ func runLlmCommands(settings Settings, commandList []Command, sessionPath string
 	b, err := json.MarshalIndent(writeData, "", "    ")
 
 	if err != nil {
-		log.Fatal("Could not marshall llm response")
+		return err
 	}
 
 	err = os.WriteFile(filepath.Join(sessionPath, "completion.json"), b, 0666)
 
 	if err != nil {
-		log.Fatal("Could not write llm response")
+		return err
 	}
+
+	return nil
 }
 
 type Configuration struct {
@@ -211,8 +213,6 @@ func (l *liveCommand) run() {
 	}
 
 	pth := createSessionDirectory(sessionName)
-
-	fmt.Println(timeout)
 
 	RunLive(uint64(timeout), l.headless, clt, pth)
 }
@@ -375,48 +375,15 @@ func (r *runCommand) run() {
 		log.Fatalf("failed to decode json file: %v", err)
 	}
 
-	//pth, exists := os.LookupEnv("BENCHAI-SAVEDIR")
-	//
-	//if exists {
-	//	if _, err = os.Stat(pth); err != nil && os.IsNotExist(err) {
-	//		log.Fatalf("directory %s does not exist", pth)
-	//	} else if err != nil {
-	//		log.Fatalf("cannot use directory %s as the save location basepath", pth)
-	//	}
-	//} else {
-	//	currentUser, err := user.Current()
-	//
-	//	if err != nil {
-	//		log.Fatal("was unable to extract the current os user")
-	//	}
-	//
-	//	pth = path.Join(currentUser.HomeDir, "/.cache/benchai/agent/")
-	//}
-	//
-	//pth = path.Join(pth, "sessions")
-	//
-	//if err = os.MkdirAll(pth, 0777); err != nil && !os.IsExist(err) {
-	//	log.Fatalf("session directory at %s does not exist and cannot be created", pth)
-	//}
-
 	pth := createSessionDirectory(config.SessionId)
-
-	//if err = os.Mkdir(pth, 0777); err != nil && os.IsExist(err) {
-	//	log.Fatalf("session: %s, already exists", pth)
-	//} else if err != nil {
-	//	log.Fatalf("cannot use directory %s as the session save location", pth)
-	//}
-	//
-	//if err = os.WriteFile(filepath.Join(pth, "config.json"), bytes, 0777); err != nil {
-	//	log.Fatal("was unable to write config to session file")
-	//}
 
 	for _, op := range config.Operations {
 		switch op.Type {
 		case "browser":
 			runBrowserCommands(op.Settings, op.CommandList, pth)
 		case "llm":
-			runLlmCommands(op.Settings, op.CommandList, pth)
+			err = runLlmCommands(op.Settings, op.CommandList, pth)
+			log.Fatal(err)
 		default:
 			log.Fatalf("unknown operation type: %s", op.Type)
 		}
