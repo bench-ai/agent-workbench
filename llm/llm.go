@@ -163,18 +163,18 @@ func (g *gptToolMessage) GetRole() string {
 	return g.Role
 }
 
-type toolFunction struct {
+type ToolFunction struct {
 	Description *string                `json:"description,omitempty"`
 	Name        string                 `json:"name"`
 	Parameters  map[string]interface{} `json:"parameters"`
 }
 
-type tool struct {
+type Tool struct {
 	Type     string       `json:"type"`
-	Function toolFunction `json:"function"`
+	Function ToolFunction `json:"function"`
 }
 
-func (t *tool) validateTools(engine engine) error {
+func (t *Tool) validateTools(engine engine) error {
 	validSlice := []string{
 		"function",
 	}
@@ -208,17 +208,26 @@ type chatGpt struct {
 	Stream           *bool              `json:"stream,omitempty"`
 	Temperature      *float32           `json:"temperature,omitempty"`
 	TopP             *float32           `json:"top_p,omitempty"`
-	Tools            *[]tool            `json:"tools,omitempty"`
+	Tools            *[]Tool            `json:"tools,omitempty"`
 	ToolChoice       interface{}        `json:"tool_choice"`
 	key              string
 }
 
-func initChatGpt(model, key string, maxTokens *int, temperature *float32) *chatGpt {
+// if the user provides tools
+func initChatGpt(
+	model,
+	key string,
+	maxTokens *int,
+	temperature *float32,
+	tools *[]Tool,
+	toolChoice interface{}) *chatGpt {
 	c := chatGpt{
 		Model:       model,
 		Temperature: temperature,
 		MaxTokens:   maxTokens,
 		key:         key,
+		Tools:       tools,
+		ToolChoice:  toolChoice,
 	}
 
 	return &c

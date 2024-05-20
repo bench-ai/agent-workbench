@@ -48,13 +48,17 @@ func mapToMessage(messageType string, messageMap map[string]interface{}) message
 	return message
 }
 
-func settingsMapToModel(settings map[string]interface{}, maxToken *int) model {
+func settingsMapToModel(settings map[string]interface{}, maxToken *int, tools *[]Tool, toolChoice interface{}) model {
 	name, ok := settings["name"]
 
 	if !ok {
 		log.Fatal("modelType setting name not found")
 	}
 
+	err := validateToolChoice(toolChoice)
+	if err != nil {
+		log.Fatal(err)
+	}
 	var retModel model
 
 	switch name {
@@ -79,7 +83,7 @@ func settingsMapToModel(settings map[string]interface{}, maxToken *int) model {
 
 		tempfix := float32(temperature)
 
-		retModel = initChatGpt(modelType, apiKey, maxToken, &tempfix)
+		retModel = initChatGpt(modelType, apiKey, maxToken, &tempfix, tools, toolChoice)
 	default:
 		log.Fatalf("%s is not a supported llm \n", name)
 	}
@@ -91,6 +95,8 @@ func Execute(
 	messageTypeSlice []string,
 	messageMapSlice []map[string]interface{},
 	settingsMapSlice []map[string]interface{},
+	tools *[]Tool,
+	toolChoice interface{},
 	maxToken *int,
 	tryLimit int16,
 	requestWaitTime *int16) (*ChatCompletion, error) {
@@ -107,7 +113,7 @@ func Execute(
 	}
 
 	for i := range modelSlice {
-		modelSlice[i] = settingsMapToModel(settingsMapSlice[i], maxToken)
+		modelSlice[i] = settingsMapToModel(settingsMapSlice[i], maxToken, tools, toolChoice)
 	}
 
 	return exponentialBackoff(modelSlice, &messageSlice, tryLimit, requestWaitTime)

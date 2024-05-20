@@ -21,6 +21,8 @@ type Settings struct {
 	MaxToken    *int                     `json:"max_tokens"`
 	LLMSettings []map[string]interface{} `json:"llm_settings"`
 	TryLimit    int16                    `json:"try_limit"`
+	Tools       *[]llm.Tool              `json:"tools,omitempty"`       //array of tool objects
+	ToolChoice  interface{}              `json:"tool_choice,omitempty"` //tool choice (auto, none, etc.)
 }
 
 type Command struct {
@@ -66,6 +68,8 @@ func runLlmCommands(settings Settings, commandList []Command, sessionPath string
 		messageTypeSlice,
 		messageSlice,
 		modelSettingsSlice,
+		settings.Tools,
+		settings.ToolChoice,
 		settings.MaxToken,
 		settings.TryLimit,
 		settings.Timeout)

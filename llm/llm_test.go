@@ -51,12 +51,12 @@ func TestValidateResponseFormat(t *testing.T) {
 
 func TestValidateTools(t *testing.T) {
 
-	func1 := toolFunction{
+	func1 := ToolFunction{
 		Name:       "test",
 		Parameters: map[string]interface{}{"test": "test"},
 	}
 
-	t1 := tool{
+	t1 := Tool{
 		Type:     "function",
 		Function: func1,
 	}
