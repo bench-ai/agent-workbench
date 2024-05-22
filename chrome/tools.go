@@ -1,3 +1,13 @@
+/**
+Key Terms:
+
+snapshot: a snapshot is a name of a folder often passed in as a browser command argument.
+It signifies what folder name you want to assign the data being collected too. It's useful because you can
+group data collected at certain points of time together.
+
+
+*/
+
 package chrome
 
 import (
@@ -15,23 +25,43 @@ import (
 	"time"
 )
 
+// FileJob
+/*
+allows chromedp actions to write files in the background
+*/
 type FileJob struct {
 	c  chan error
 	wg sync.WaitGroup
 }
 
+// GetChannel
+/*
+get access to the error channel
+*/
 func (f *FileJob) GetChannel() chan error {
 	return f.c
 }
 
+// GetWaitGroup
+/*
+get access to the wait group
+*/
 func (f *FileJob) GetWaitGroup() *sync.WaitGroup {
 	return &f.wg
 }
 
+// InitFileJob
+/*
+creates a new file job struct
+*/
 func InitFileJob() *FileJob {
 	return &FileJob{c: make(chan error)}
 }
 
+// writeBytes
+/*
+writes files to the given path, in the background
+*/
 func (f *FileJob) writeBytes(byteSlice []byte, writePath string) {
 	f.wg.Add(1)
 	go func() {
@@ -40,11 +70,23 @@ func (f *FileJob) writeBytes(byteSlice []byte, writePath string) {
 	}()
 }
 
+// browserCommand
+/*
+interface for browser based actions
+
+1) validate signifies if the struct has valid values
+
+2) getAction returns the chromedp action func that can get executed
+*/
 type browserCommand interface {
 	validate() error
 	getAction(job *FileJob) chromedp.ActionFunc
 }
 
+// createSnapshotFolder
+/*
+creates the initial directory where the snapshot data will be saved
+*/
 func createSnapshotFolder(savePath, snapshot string) string {
 	folderPath := filepath.Join(savePath, "snapshots", snapshot)
 	imagePath := filepath.Join(folderPath, "images")
@@ -95,6 +137,10 @@ func parseThroughNodes(nodeSlice []*nodeWithStyles) []nodeMetaData {
 	return nodeMetaDataSlice
 }
 
+// nodeMetaData
+/*
+carries all essential node data for web interaction
+*/
 type nodeMetaData struct {
 	Id         int64               `json:"id"`
 	Type       string              `json:"type"`
@@ -103,11 +149,19 @@ type nodeMetaData struct {
 	CssStyles  []map[string]string `json:"css_styles"`
 }
 
+// nodeWithStyles
+/*
+node with its correlating styles
+*/
 type nodeWithStyles struct {
 	cssStyles []*css.ComputedStyleProperty
 	node      *cdp.Node
 }
 
+// navigateToUrl
+/*
+opens a webpage with the url provided
+*/
 func navigateToUrl(
 	url string) chromedp.ActionFunc {
 	return func(c context.Context) error {
@@ -119,10 +173,18 @@ func navigateToUrl(
 	}
 }
 
+// navigateWebPage
+/*
+handles url navigation
+*/
 type navigateWebPage struct {
 	url string
 }
 
+// validate
+/*
+ensures the url provided is a valid url that can be navigated too
+*/
 func (n *navigateWebPage) validate() error {
 	if !(strings.HasPrefix(n.url, "http://") || strings.HasPrefix(n.url, "https://")) {
 		return errors.New("url must begin with http:// or https://")
@@ -130,6 +192,10 @@ func (n *navigateWebPage) validate() error {
 	return nil
 }
 
+// navInitFromJson
+/*
+turns json bytes into a navigateWebPage struct
+*/
 func navInitFromJson(jsonBytes []byte) *navigateWebPage {
 	type body struct {
 		Url string `json:"url"`
@@ -147,16 +213,36 @@ func navInitFromJson(jsonBytes []byte) *navigateWebPage {
 	}
 }
 
+// getAction
+/*
+converts the struct to ana action
+*/
 func (n *navigateWebPage) getAction(job *FileJob) chromedp.ActionFunc {
 	_ = job
 	return navigateToUrl(n.url)
 }
 
+// fullPageScreenShot
+/*
+struct that handles taking full page screenshots of the webpage on the browser
+
+quality: how high resolution the image should be, higher is better
+
+savePath: where the image should be saved
+*/
 type fullPageScreenShot struct {
 	quality  uint8
 	savePath string
 }
 
+// takeFullPageScreenshot
+/*
+takes screenshots of the entire webpage on the browser
+
+quality: how high resolution the image should be, higher is better
+
+buffer: a pointer to a slice that will store the data
+*/
 func takeFullPageScreenshot(
 	quality uint8,
 	buffer *[]byte) chromedp.ActionFunc {
@@ -170,6 +256,10 @@ func takeFullPageScreenshot(
 	}
 }
 
+// fpsInitFromJson
+/*
+turns json bytes into a fpsInitFromJson struct
+*/
 func fpsInitFromJson(jsonBytes []byte, sessionPath string) *fullPageScreenShot {
 	type body struct {
 		Quality        uint8  `json:"quality"`

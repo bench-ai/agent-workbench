@@ -55,6 +55,10 @@ func AddOperation(
 	return browserParams.getAction(job)
 }
 
+// runTasks
+/*
+converts a map to chrome dp actions and executes them
+*/
 func runTasks(
 	paramSlice []map[string]interface{},
 	commandNameSlice []string,
