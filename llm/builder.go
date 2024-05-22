@@ -55,10 +55,10 @@ func settingsMapToModel(settings map[string]interface{}, maxToken *int, tools *[
 		log.Fatal("modelType setting name not found")
 	}
 
-	err := validateToolChoice(toolChoice)
-	if err != nil {
-		log.Fatal(err)
-	}
+	//err := validateToolChoice(toolChoice)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
 	var retModel model
 
 	switch name {

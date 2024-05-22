@@ -89,7 +89,6 @@ func runBrowserCommands(settings Settings, commandList []Command, sessionPath st
 
 // create an array of LLMs and calls exponential backoff on the array of messages built in addLlmOpperations
 func runLlmCommands(settings Settings, commandList []Command, sessionPath string) error {
-
 	messageTypeSlice := make([]string, len(commandList))
 	messageSlice := make([]map[string]interface{}, len(commandList))
 	modelSettingsSlice := make([]map[string]interface{}, len(settings.LLMSettings))
@@ -355,7 +354,6 @@ The run command, checks if the user wishes to run their chrome in headless mode,
 a file or passing raw json
 */
 func (r *runCommand) run() {
-
 	configString := r.fs.Arg(0)
 
 	if configString == "" {
@@ -387,7 +385,9 @@ func (r *runCommand) run() {
 			runBrowserCommands(op.Settings, op.CommandList, pth)
 		case "llm":
 			err = runLlmCommands(op.Settings, op.CommandList, pth)
-			log.Fatal(err)
+			if err != nil {
+				log.Fatalf("failed to run llm: %v", err)
+			}
 		default:
 			log.Fatalf("unknown operation type: %s", op.Type)
 		}
