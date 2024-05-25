@@ -26,6 +26,7 @@ func AddOperation(
 	}
 
 	var browserParams browserCommand
+	var browserError error
 
 	switch commandName {
 	case "open_web_page":
@@ -37,9 +38,15 @@ func AddOperation(
 	case "collect_nodes":
 		browserParams = nodeInitFromJson(paramBytes, sessionPath)
 	case "click":
-		browserParams = clickInitFromJson(paramBytes)
+		browserParams, browserError = clickInitFromJson(paramBytes)
+		if browserError != nil {
+			log.Fatalf("operation cannot be added dude to error: %v", browserError)
+		}
 	case "save_html":
-		browserParams = htmlInitFromJson(paramBytes, sessionPath)
+		browserParams, browserError = htmlInitFromJson(paramBytes, sessionPath)
+		if browserError != nil {
+			log.Fatalf("operation cannot be added dude to error: %v", browserError)
+		}
 	case "sleep":
 		browserParams = sleepInitFromJson(paramBytes)
 	case "iterate_html":
