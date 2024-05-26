@@ -165,7 +165,10 @@ func processOperations(
 	switch op.Type {
 	case "browser":
 		lastCommand := op.CommandList[len(op.CommandList)-1]
-		action := chrome.AddOperation(lastCommand.Params, lastCommand.CommandName, filePath, job)
+		action, err := chrome.AddOperation(lastCommand.Params, lastCommand.CommandName, filePath, job)
+		if err != nil {
+			return err
+		}
 		responseErr = performAction(ctx, action, job, waitTime)
 	case "llm":
 		//waitSeconds := *waitTime / 1000

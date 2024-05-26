@@ -1,3 +1,10 @@
+/*
+Websites can visibly change over time without any human input. This is due the presence of various js and css based
+animations. These animations can remove and add interactivity, so we wanted a custom action that would essentially
+snapshot and log all these changes for further usage. This was before we added the capability of a live session, which
+now makes this obsolete. We are keeping it until we are confident it is not needed.
+*/
+
 package chrome
 
 import (
@@ -277,6 +284,10 @@ func getHtml(
 	return err, text
 }
 
+// writeHtml
+/*
+writes html asynchronously
+*/
 func writeHtml(
 	savePath,
 	text string,
@@ -308,6 +319,10 @@ func getNodes(
 	return err, nodeSlice
 }
 
+// writeNodes
+/*
+writes node file asynchronously
+*/
 func writeNodes(
 	nodeSlice []*nodeWithStyles,
 	savePath string,
@@ -324,6 +339,10 @@ func writeNodes(
 	job.writeBytes(byteSlice, filePath)
 }
 
+// htmlIterator
+/*
+represents core components of the html_iter command
+*/
 type htmlIterator struct {
 	iterLimit        uint16
 	restTimeMs       uint32
@@ -336,6 +355,10 @@ type htmlIterator struct {
 	saveImage        bool
 }
 
+// htmlIterInitFromJson
+/*
+get htmlIterator from jsonBytes
+*/
 func htmlIterInitFromJson(jsonBytes []byte, sessionPath string) *htmlIterator {
 	type body struct {
 		IterLimit         *uint16 `json:"iter_limit"`
@@ -391,15 +414,19 @@ func htmlIterInitFromJson(jsonBytes []byte, sessionPath string) *htmlIterator {
 	return &iter
 }
 
+// validate
+/*
+ensures htmlIterator properties are valid
+*/
 func (h *htmlIterator) validate() error {
 	if h.snapshotName == "" {
-		log.Fatal("snapshot name for iter html cannot be blank")
+		return fmt.Errorf("snapshot name for iter html cannot be blank")
 	}
 
 	return nil
 }
 
-// htmlIteratorAction
+// getAction
 /*
 collects all unique transition snapshots
 */

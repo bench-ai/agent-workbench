@@ -1,8 +1,13 @@
+/**
+contains methods to help create and execute browser commands
+*/
+
 package chrome
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/chromedp/chromedp"
 	"log"
 	"time"
@@ -10,19 +15,18 @@ import (
 
 // AddOperation
 /*
-checks for if an operation exists and adds it to the execution queue
+checks for if an operation exists and converts it to a chromedp action
 */
-
 func AddOperation(
 	params map[string]interface{},
 	commandName string,
 	sessionPath string,
-	job *FileJob) chromedp.Action {
+	job *FileJob) (chromedp.Action, error) {
 
 	paramBytes, err := json.Marshal(params)
 
 	if err != nil {
-		log.Fatal("failed to marshall browser llm")
+		return nil, err
 	}
 
 	var browserParams browserCommand
@@ -40,26 +44,26 @@ func AddOperation(
 	case "click":
 		browserParams, browserError = clickInitFromJson(paramBytes)
 		if browserError != nil {
-			log.Fatalf("operation cannot be added dude to error: %v", browserError)
+			return nil, err
 		}
 	case "save_html":
 		browserParams, browserError = htmlInitFromJson(paramBytes, sessionPath)
 		if browserError != nil {
-			log.Fatalf("operation cannot be added dude to error: %v", browserError)
+			return nil, err
 		}
 	case "sleep":
 		browserParams = sleepInitFromJson(paramBytes)
 	case "iterate_html":
 		browserParams = htmlIterInitFromJson(paramBytes, sessionPath)
 	default:
-		log.Fatalf("%s is not a supported browser llm \n", commandName)
+		return nil, fmt.Errorf("%s is not a supported browser llm \n", commandName)
 	}
 
 	if err := browserParams.validate(); err != nil {
-		log.Fatalf("%v", err)
+		return nil, err
 	}
 
-	return browserParams.getAction(job)
+	return browserParams.getAction(job), nil
 }
 
 // runTasks
@@ -76,7 +80,11 @@ func runTasks(
 	tsk := make(chromedp.Tasks, len(commandNameSlice))
 
 	for index, cName := range commandNameSlice {
-		tsk[index] = AddOperation(paramSlice[index], cName, sessionPath, job)
+		act, err := AddOperation(paramSlice[index], cName, sessionPath, job)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tsk[index] = act
 	}
 
 	err := chromedp.Run(ctx, tsk)
@@ -97,6 +105,10 @@ func runTasks(
 	}
 }
 
+// RunSequentialCommands
+/*
+runs commands sequentially based on the order provided, and initializes the requested chromedp context
+*/
 func RunSequentialCommands(
 	headless bool,
 	timeout *int16,

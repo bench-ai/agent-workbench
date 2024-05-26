@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"math/rand"
+	"os"
 	"testing"
 )
 
@@ -323,5 +324,57 @@ func TestNodeToMap(t *testing.T) {
 
 	if len(m5[cdp.NodeID(1)]) != 2 {
 		t.Error("found inaccurate size in map slice len")
+	}
+}
+
+func TestHtmlIterInitFromJson(t *testing.T) {
+	jBytes := []byte("{}")
+
+	err, sess := tempDir()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	def := htmlIterInitFromJson(jBytes, sess)
+
+	if def.iterLimit == 0 {
+		t.Fatalf("iter limit was not assigned a proper default")
+	}
+
+	if def.restTimeMs == 0 {
+		t.Fatalf("rest time was not assigned a proper default")
+	}
+
+	if def.imageQuality == 0 {
+		t.Fatalf("image quality was not assigned a proper default")
+	}
+
+	defer func() {
+		if err := os.RemoveAll(sess); err != nil {
+			t.Fatal(err)
+		}
+	}()
+}
+
+func TestHtmlValidate(t *testing.T) {
+	jBytes := []byte(`{"snapshot_name": "s1"}`)
+
+	err, sess := tempDir()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	def := htmlIterInitFromJson(jBytes, sess)
+
+	if def.validate() != nil {
+		t.Fatal("valid snapshot name was rejected")
+	}
+
+	def.snapshotName = ""
+
+	if def.validate() == nil {
+		t.Fatal("invalid snapshot name was accepted")
 	}
 }
