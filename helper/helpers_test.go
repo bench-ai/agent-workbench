@@ -122,3 +122,37 @@ func TestIsBetween(t *testing.T) {
 		t.Error("failed to detect value that -10 is not between 10 and 100")
 	}
 }
+
+func getSet() Set[uint8] {
+	dataSet := make(Set[uint8], 10)
+	return dataSet
+}
+
+func TestSet_Has(t *testing.T) {
+	set := Set[uint8]{
+		108: struct{}{},
+	}
+
+	if !set.Has(108) {
+		t.Fatal("has functionality failed")
+	}
+}
+
+func TestSet_Insert(t *testing.T) {
+	set := getSet()
+	set.Insert(10)
+
+	if !set.Has(10) {
+		t.Fatal("insert failed")
+	}
+}
+
+func TestSet_Delete(t *testing.T) {
+	set := getSet()
+	set.Insert(10)
+	set.Delete(10)
+
+	if set.Has(10) {
+		t.Fatal("failed to delete")
+	}
+}
