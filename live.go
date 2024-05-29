@@ -176,7 +176,7 @@ func processOperations(
 			return errors.New("command wait time exceeds limit for LLM'S the limit is 32767 seconds")
 		}
 
-		llmWaitTime := int16(*waitTime)
+		llmWaitTime := int32(*waitTime)
 		op.Settings.Timeout = &llmWaitTime
 		responseErr = runLlmCommands(op.Settings, op.CommandList, filePath)
 	case "exit":

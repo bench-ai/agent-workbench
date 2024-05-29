@@ -111,7 +111,7 @@ runs commands sequentially based on the order provided, and initializes the requ
 */
 func RunSequentialCommands(
 	headless bool,
-	timeout *int16,
+	timeout *int32,
 	sessionPath string,
 	paramSlice []map[string]interface{},
 	commandNameSlice []string,

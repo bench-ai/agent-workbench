@@ -56,7 +56,7 @@ func exponentialBackoff(
 	llmSlice []model,
 	chatRequest *[]messageInterface,
 	tryLimit int16,
-	requestWaitTime *int16) (*ChatCompletion, error) {
+	requestWaitTime *int32) (*ChatCompletion, error) {
 
 	type request struct {
 		comp *ChatCompletion

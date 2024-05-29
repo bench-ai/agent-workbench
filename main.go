@@ -17,7 +17,7 @@ import (
 )
 
 type Settings struct {
-	Timeout     *int16                   `json:"timeout"`
+	Timeout     *int32                   `json:"timeout"`
 	Headless    bool                     `json:"headless"`
 	MaxToken    *int                     `json:"max_tokens"`
 	LLMSettings []map[string]interface{} `json:"llm_settings"`

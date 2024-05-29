@@ -99,7 +99,7 @@ func Execute(
 	toolChoice interface{},
 	maxToken *int,
 	tryLimit int16,
-	requestWaitTime *int16) (*ChatCompletion, error) {
+	requestWaitTime *int32) (*ChatCompletion, error) {
 
 	if len(messageTypeSlice) != len(messageMapSlice) {
 		log.Fatal("type slice and array slice lengths are not the same in llm.Execute")
