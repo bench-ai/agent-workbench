@@ -40,12 +40,16 @@ type Operation struct {
 }
 
 func createSessionDirectory(sessionId string) string {
-	pth, exists := os.LookupEnv("BENCHAI-SAVEDIR")
+	pth, exists := os.LookupEnv("BENCHAI_SAVEDIR")
 
 	if exists {
 		if _, err := os.Stat(pth); err != nil && os.IsNotExist(err) {
 			log.Fatalf("directory %s does not exist", pth)
 		} else if err != nil {
+			log.Fatalf("cannot use directory %s as the save location basepath", pth)
+		}
+		pth = path.Join(pth, "agent")
+		if err := os.Mkdir(pth, 0777); err != nil && !os.IsExist(err) {
 			log.Fatalf("cannot use directory %s as the save location basepath", pth)
 		}
 	} else {
@@ -255,7 +259,7 @@ func (s *sessionCommand) run() {
 		log.Fatalf("no arguments can follow past the list flag")
 	}
 
-	pth, exists := os.LookupEnv("BENCHAI-SAVEDIR")
+	pth, exists := os.LookupEnv("BENCHAI_SAVEDIR")
 
 	if !exists {
 		currentUser, err := user.Current()
