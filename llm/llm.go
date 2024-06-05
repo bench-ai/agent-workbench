@@ -215,22 +215,41 @@ type chatGpt struct {
 
 // if the user provides tools
 func initChatGpt(
-	model,
-	key string,
+	jsonBytes []byte,
 	maxTokens *int,
-	temperature *float32,
 	tools *[]Tool,
-	toolChoice interface{}) *chatGpt {
+	toolChoice interface{}) (error, *chatGpt) {
+
+	settingsP := &struct {
+		ApiKey string   `json:"api_key"`
+		Temp   *float32 `json:"temp"`
+		Model  string   `json:"model"`
+	}{}
+
+	err := json.Unmarshal(jsonBytes, settingsP)
+
+	if err != nil {
+		return err, nil
+	}
+
+	if settingsP.ApiKey == "" {
+		return errors.New("openai settings received empty api key"), nil
+	}
+
+	if settingsP.Model == "" {
+		return errors.New("openai settings received empty model name"), nil
+	}
+
 	c := chatGpt{
-		Model:       model,
-		Temperature: temperature,
+		Model:       settingsP.Model,
+		Temperature: settingsP.Temp,
 		MaxTokens:   maxTokens,
-		key:         key,
+		key:         settingsP.ApiKey,
 		Tools:       tools,
 		ToolChoice:  toolChoice,
 	}
 
-	return &c
+	return nil, &c
 }
 
 type Message struct {

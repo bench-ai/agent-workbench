@@ -43,20 +43,20 @@ func AddOperation(
 		browserParams = nodeInitFromJson(paramBytes, sessionPath)
 	case "click":
 		browserParams, browserError = clickInitFromJson(paramBytes)
-		if browserError != nil {
-			return nil, err
-		}
 	case "save_html":
 		browserParams, browserError = htmlInitFromJson(paramBytes, sessionPath)
-		if browserError != nil {
-			return nil, err
-		}
 	case "sleep":
 		browserParams = sleepInitFromJson(paramBytes)
+	case "scroll_to_pixel":
+		browserError, browserParams = pixInitFromJson(paramBytes)
 	case "iterate_html":
 		browserParams = htmlIterInitFromJson(paramBytes, sessionPath)
 	default:
 		return nil, fmt.Errorf("%s is not a supported browser llm \n", commandName)
+	}
+
+	if browserError != nil {
+		return nil, err
 	}
 
 	if err := browserParams.validate(); err != nil {

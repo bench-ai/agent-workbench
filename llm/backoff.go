@@ -4,30 +4,51 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"time"
 )
 
-// model interface that implements request function
+// model
+/*
+interface that implements request function
+*/
 type model interface {
 	Validate(messageSlice []messageInterface) error
 	Request(messages []messageInterface, ctx context.Context) (error, *ChatCompletion)
 }
 
+// modelError
+/*
+error class representing an error produced in the chat completion generation process
+*/
 type modelError struct {
 	mode    string
 	Message string
 }
 
+/*
+Error
+
+the error as a string
+*/
 func (l *modelError) Error() string {
 	return fmt.Sprintf("%s: %s. \n", l.mode, l.Message)
 }
 
+/*
+Mode
+
+the reason behind the error
+*/
 func (l *modelError) Mode() string {
 	return l.mode
 }
 
+/*
+getRateLimitError
+
+get a modelError object with mode rate-limit
+*/
 func getRateLimitError(message string) modelError {
 	return modelError{
 		mode:    "rate-limit",
@@ -35,6 +56,11 @@ func getRateLimitError(message string) modelError {
 	}
 }
 
+/*
+getStandardError
+
+get a modelError object with mode standard
+*/
 func getStandardError(message string) modelError {
 	return modelError{
 		mode:    "standard",
@@ -42,8 +68,18 @@ func getStandardError(message string) modelError {
 	}
 }
 
+/*
+backoffError
+
+Error produced when all backoff attempts are exhausted
+*/
 type backoffError struct{}
 
+/*
+Error
+
+the error as a string
+*/
 func (b *backoffError) Error() string {
 	return "all backoff attempts failed"
 }
@@ -85,7 +121,6 @@ func exponentialBackoff(
 			select {
 			case <-ctxTimeout.Done():
 				cancel()
-				log.Println("failed to complete request in allocated duration")
 				<-ch
 			case result := <-ch:
 				cancel()
@@ -97,7 +132,6 @@ func exponentialBackoff(
 
 				if errors.As(result.err, &llmError) {
 					if (llmError.Mode() == "rate-limit") && (i != (tryLimit - 1)) {
-						log.Println("rate limit hit, sleeping...")
 						time.Sleep(time.Second * time.Duration(math.Pow(2.0, exp)))
 						exp++
 					} else if llmError.Mode() == "standard" {

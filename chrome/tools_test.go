@@ -374,3 +374,20 @@ func TestValidateNodeCollect(t *testing.T) {
 		t.Fatal("valid node collect struct rejected")
 	}
 }
+
+func TestPixInitFromJson(t *testing.T) {
+	bytes := []byte(`{"x_pixel": 0, "y_pixel": 1000}`)
+	err, pScroll := pixInitFromJson(bytes)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pScroll.yPix != 1000 {
+		t.Fatal("y_pixel was not properly set")
+	}
+
+	if pScroll.xPix != 0 {
+		t.Fatal("x_pixel was not properly set")
+	}
+}

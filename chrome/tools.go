@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/css"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"log"
 	"os"
@@ -808,6 +809,105 @@ func (nc *nodeCollect) getAction(job *FileJob) chromedp.ActionFunc {
 		job.writeBytes(byteSlice, nc.savePath)
 
 		return err
+	}
+}
+
+// scrollByPos
+/*
+represents a command that scrolls to a specific pixel on the page
+*/
+type scrollByPos struct {
+	xPix uint32
+	yPix uint32
+}
+
+// scrollToPixel
+/*
+xPos the x coordinate location to scroll too
+yPos the y coordinate location to scroll too
+
+scrolls to certain location on the screen
+*/
+func scrollToPixel(xPos, yPos uint32) chromedp.ActionFunc {
+	return func(ctx context.Context) error {
+		jsCode := fmt.Sprintf(`window.scrollTo(%d, %d);`, xPos, yPos)
+		_, exp, err := runtime.Evaluate(jsCode).Do(ctx)
+
+		if exp != nil {
+			return exp
+		}
+
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+// pixInitFromJson
+/*
+inits a scrollByPos command from json bytes
+*/
+func pixInitFromJson(jsonBytes []byte) (error, *scrollByPos) {
+	type body struct {
+		XPix uint32 `json:"x_pixel"`
+		YPix uint32 `json:"y_pixel"`
+	}
+
+	bdy := &body{}
+	err := json.Unmarshal(jsonBytes, bdy)
+
+	scroll := scrollByPos{
+		xPix: bdy.XPix,
+		yPix: bdy.YPix,
+	}
+
+	return err, &scroll
+}
+
+// validate
+/*
+ensure values in scrollByPos are valid
+*/
+func (sc *scrollByPos) validate() error {
+	return nil
+}
+
+// getAction
+/*
+a chromedp action that scrolls to a particular pixel on the screen
+*/
+func (sc *scrollByPos) getAction(job *FileJob) chromedp.ActionFunc {
+	_ = job
+	return scrollToPixel(sc.xPix, sc.yPix)
+}
+
+// scrollByPercentage
+/*
+percent the percent to scroll by
+
+scrolls to certain location on the screen
+*/
+func scrollByPercentage(percent float32) (error, chromedp.ActionFunc) {
+
+	if percent > 1.0 || percent <= 0 {
+		return errors.New("percent must be greater than 0 and less than 1"), func(ctx context.Context) error {
+			return errors.New("percent must be greater than 0 and less than 1")
+		}
+	}
+
+	return nil, func(ctx context.Context) error {
+		jsCode := fmt.Sprintf(`window.scrollTo(0, Math.floor(document.body.scrollHeight * %f));`, percent)
+		_, exp, err := runtime.Evaluate(jsCode).Do(ctx)
+
+		if exp != nil {
+			return exp
+		}
+
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 }
 

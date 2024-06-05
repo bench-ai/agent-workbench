@@ -18,7 +18,7 @@ func actionRunner(timeoutSeconds int64, actionFunc ...chromedp.ActionFunc) error
 		context.Background(),
 		append(
 			chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", true))...)
+			chromedp.Flag("headless", false))...)
 
 	ctx, _ := chromedp.NewContext(
 		actx,
@@ -176,5 +176,32 @@ func TestHtml(t *testing.T) {
 
 	if !strings.HasSuffix(htmlString, "/body>") {
 		t.Errorf("does not end with the selected tag body")
+	}
+}
+
+func TestScrollToPixel(t *testing.T) {
+	nav := getNavigateCommand()
+	sle := sleepForMs(2000)
+	scroll := scrollToPixel(0, 500)
+	err := actionRunner(7, nav, sle, scroll)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScrollByPercentage(t *testing.T) {
+	nav := getNavigateCommand()
+	sle := sleepForMs(2000)
+	err, scroll := scrollByPercentage(1)
+	sle2 := sleepForMs(2000)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = actionRunner(7, nav, sle, scroll, sle2)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

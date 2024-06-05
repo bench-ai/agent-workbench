@@ -39,7 +39,7 @@ func (t *testRequest) Request(messages []messageInterface, ctx context.Context) 
 
 func timestamp(m []messageInterface, llms []model) (error, int64) {
 
-	wt := int16(1)
+	wt := int32(1)
 	start := time.Now()
 	_, err := exponentialBackoff(llms, &m, 2, &wt)
 	end := time.Now()
