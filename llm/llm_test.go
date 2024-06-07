@@ -1,6 +1,8 @@
 package llm
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -158,5 +160,52 @@ func TestValidateToolChoice(t *testing.T) {
 
 	if err := validateToolChoice(failData); err == nil {
 		t.Errorf("accpeted invalid tool choice, %v", err)
+	}
+}
+
+func TestInitChatGpt(t *testing.T) {
+	settings := map[string]interface{}{
+		"temperature": 1,
+		"model":       "gpt4",
+	}
+
+	settB, er := json.Marshal(settings)
+
+	if er != nil {
+		t.Fatal(er)
+	}
+
+	er, _ = initChatGpt(settB, nil, nil, nil)
+
+	if er == nil {
+		t.Error("accepted settings without api_key")
+	}
+
+	settings["api_key"] = "password"
+	delete(settings, "model")
+	settB, er = json.Marshal(settings)
+
+	if er != nil {
+		t.Fatal(er)
+	}
+
+	er, _ = initChatGpt(settB, nil, nil, nil)
+
+	if er == nil {
+		t.Error("accepted settings without model")
+	}
+
+	settings["model"] = "gpt4"
+	settB, er = json.Marshal(settings)
+
+	if er != nil {
+		t.Fatal(er)
+	}
+
+	er, _ = initChatGpt(settB, nil, nil, nil)
+
+	if er != nil {
+		fmt.Println(er)
+		t.Error("rejected valid init")
 	}
 }

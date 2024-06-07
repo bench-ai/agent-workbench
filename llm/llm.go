@@ -379,7 +379,7 @@ func initChatGpt(
 
 	settingsP := &struct {
 		ApiKey string   `json:"api_key"`
-		Temp   *float32 `json:"temp"`
+		Temp   *float32 `json:"temperature"`
 		Model  string   `json:"model"`
 	}{}
 

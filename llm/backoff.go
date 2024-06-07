@@ -94,6 +94,11 @@ func exponentialBackoff(
 	tryLimit int16,
 	requestWaitTime *int32) (*ChatCompletion, error) {
 
+	/*
+		how to calculate the max time the exponential backoff function will run for:
+		max_time = (len(llmSlice) * requestWaitTime * tryLimit) + ((2^n for n in range(0, tryLimit-1)) * len(llmSlice))
+	*/
+
 	type request struct {
 		comp *ChatCompletion
 		err  error
